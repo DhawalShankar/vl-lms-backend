@@ -11,7 +11,7 @@ import courseRoutes from './routes/course.routes.js';
 const app = express();
 
 connectDB();
-
+app.set('trust proxy', 1); // 👈 REQUIRED for Render
 app.use(helmet());
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
