@@ -17,7 +17,7 @@ const generateTokens = (userId, role) => {
 
 export const register = async (req, res, next) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, role } = req.body; // ✅ role destructure kiya
 
     if (!name || !email || !password)
       return res.status(400).json({ success: false, message: 'Name, email, and password are required.' });
@@ -28,17 +28,21 @@ export const register = async (req, res, next) => {
     if (!/(?=.*[A-Z])(?=.*\d)/.test(password))
       return res.status(400).json({ success: false, message: 'Password must contain at least one uppercase letter and one number.' });
 
+    // ✅ Sirf allowed roles accept karo — admin kabhi bhi self-register nahi kar sakta
+    const allowedRoles = ['student', 'instructor'];
+    const assignedRole = allowedRoles.includes(role) ? role : 'student';
+
     const existing = await User.findOne({ email: email.toLowerCase() });
     if (existing)
       return res.status(409).json({ success: false, message: 'An account with this email already exists.' });
 
-    const user = await User.create({ name, email, password });
+    const user = await User.create({ name, email, password, role: assignedRole }); // ✅ role pass kiya
     const { accessToken, refreshToken } = generateTokens(user._id, user.role);
 
     user.refreshToken = refreshToken;
     await user.save({ validateBeforeSave: false });
 
-    console.log(`✅ New user registered: ${email}`);
+    console.log(`✅ New user registered: ${email} as ${user.role}`);
 
     res.status(201).json({
       success: true,
@@ -69,7 +73,7 @@ export const login = async (req, res, next) => {
     user.lastLogin = new Date();
     await user.save({ validateBeforeSave: false });
 
-    console.log(`✅ User logged in: ${email}`);
+    console.log(`✅ User logged in: ${email} | role: ${user.role}`);
 
     res.status(200).json({
       success: true,

@@ -12,7 +12,6 @@ const app = express();
 
 connectDB();
 
-// Security
 app.use(helmet());
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
