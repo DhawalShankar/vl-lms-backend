@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+build/
+
+# Temporary files
+tmp/
+temp/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+
+# Coverage
+coverage/
+
+# Cache
+.cache/
+
+# Debug
+*.pid
+*.seed
+*.pid.lock
+
+# Optional - if using uploads
+uploads/
+
+# Optional - if using local database
+*.db
+
+# Render / Railway
+.vercel
