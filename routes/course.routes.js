@@ -14,7 +14,8 @@ router.get('/:id', getCourse);
 router.get('/user/enrolled', protect, getMyCourses);
 router.post('/:id/enroll', protect, enrollCourse);
 
-// Instructor / Admin only
+// Instructor / Admin only allowed
+
 router.post('/', protect, restrictTo('instructor', 'admin'), createCourse);
 router.put('/:id', protect, restrictTo('instructor', 'admin'), updateCourse);
 router.delete('/:id', protect, restrictTo('instructor', 'admin'), deleteCourse);
