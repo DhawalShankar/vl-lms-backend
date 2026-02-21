@@ -48,3 +48,6 @@ uploads/
 
 # Render / Railway
 .vercel
+
+postman/
+.postman/
