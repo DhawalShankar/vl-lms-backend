@@ -1,3 +1,4 @@
+//auth routes
 import express from 'express';
 import { register, login, refreshToken, logout, getMe } from '../controllers/auth.controller.js';
 import { protect } from '../middleware/auth.middleware.js';

@@ -17,8 +17,19 @@ export const getCourses = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data: { courses, pagination: { total, page: Number(page), limit: Number(limit), pages: Math.ceil(total / limit) } }
+      data: {
+        courses,
+        pagination: { total, page: Number(page), limit: Number(limit), pages: Math.ceil(total / limit) }
+      }
     });
+  } catch (err) { next(err); }
+};
+
+// ✅ NEW — instructor ke apne saare courses (drafts bhi)
+export const getInstructorCourses = async (req, res, next) => {
+  try {
+    const courses = await Course.find({ instructor: req.user._id }).sort('-createdAt');
+    res.status(200).json({ success: true, data: { courses } });
   } catch (err) { next(err); }
 };
 
@@ -74,7 +85,8 @@ export const enrollCourse = async (req, res, next) => {
   try {
     const course = await Course.findById(req.params.id);
     if (!course) return res.status(404).json({ success: false, message: 'Course not found.' });
-    if (!course.isPublished) return res.status(400).json({ success: false, message: 'This course is not available yet.' });
+    if (!course.isPublished)
+      return res.status(400).json({ success: false, message: 'This course is not available yet.' });
 
     const user = await User.findById(req.user._id);
     if (user.enrolledCourses.includes(req.params.id))
