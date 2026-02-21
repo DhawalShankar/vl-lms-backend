@@ -78,7 +78,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\r\n  \"email\": \"admin@vartalang.in\",\r\n  \"password\": \"Admin@123\"\r\n}",
+              "raw": "{\r\n  \"email\": \"admin@admin.in\",\r\n  \"password\": \"admin@123\"\r\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -506,61 +506,6 @@
       "name": "ADMIN",
       "item": [
         {
-          "name": "admin login",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "id": "988cc32f-7b6b-418d-86fa-cd55e49b3e97",
-                "exec": [
-                  ""
-                ],
-                "type": "text/javascript",
-                "packages": {},
-                "requests": {}
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "id": "124c5a1f-1ae9-4673-a1d0-e1424f688f45",
-                "exec": [
-                  "pm.collectionVariables.set(\"access_token\", pm.response.json().data.accessToken);\r",
-                  "pm.collectionVariables.set(\"refresh_token\", pm.response.json().data.refreshToken);"
-                ],
-                "type": "text/javascript",
-                "packages": {},
-                "requests": {}
-              }
-            }
-          ],
-          "id": "0a6ae155-2a5f-4ec5-8520-d7def6913505",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "body": {
-              "mode": "raw",
-              "raw": "{\r\n  \"email\": \"admin@vartalang.in\",\r\n  \"password\": \"Admin@123\"\r\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{base_url}}/auth/login",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "auth",
-                "login"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
           "name": "access users",
           "id": "ed8f67c2-0f5a-4bf9-8bfd-daadceb034ff",
           "request": {
@@ -628,6 +573,36 @@
             }
           },
           "response": []
+        },
+        {
+          "name": "delete user",
+          "id": "cc8cc864-c0b8-4e5f-9ffd-af989279af5b",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/users/{{user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "users",
+                "{{user_id}}"
+              ]
+            }
+          },
+          "response": []
         }
       ],
       "id": "b92f15a9-3935-4137-bcc9-8bbc65171ccf",
@@ -636,30 +611,29 @@
   ],
   "variable": [
     {
-      "id": "579c2543-3bd9-4e95-900f-47053002c29b",
+      "id": "4dc5a372-8a58-4627-b181-26dc69090b59",
       "key": "base_url",
       "value": ""
     },
     {
-      "id": "23b19145-3c45-41b2-a60d-b47498fa5f99",
+      "id": "a87c8a85-dd24-4b5c-984d-412be1f626d1",
       "key": "access_token",
       "value": ""
     },
     {
-      "id": "01f830a4-5f7f-49aa-a3db-1fbddd1ea6e1",
+      "id": "461fe88c-44f2-4774-9e09-92752b16c6cb",
       "key": "refresh_token",
       "value": ""
     },
     {
-      "id": "a5dd3868-1bb7-4d27-9955-db434634435f",
+      "id": "71ff51d7-6180-4174-98aa-5cb4fff5c7a2",
       "key": "course_id",
       "value": ""
     },
     {
-      "id": "86f8120f-157c-497d-ac61-1a2c503d820b",
+      "id": "f161b35a-2116-460b-88ae-c517c3a6014c",
       "key": "user_id",
-      "value": "",
-      "type": "default"
+      "value": ""
     }
   ]
 }
