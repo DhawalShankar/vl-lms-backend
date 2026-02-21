@@ -1,0 +1,665 @@
+{
+  "info": {
+    "_postman_id": "a41b374f-566d-4e45-b993-d703f30d583b",
+    "name": "VL-LMS-API",
+    "description": "Scalable Learning Management System (VartaLang) REST API built with Node.js, Express, and MongoDB.\n\nImplements secure JWT-based authentication with access and refresh tokens, role-based access control (student, instructor, admin), and protected CRUD operations for course management.\n\nFeatures include:\n\n- User registration and login with bcrypt password hashing\n    \n- Access token (15 min) and refresh token (7 days)\n    \n- Role-based authorization middleware\n    \n- Instructor course creation, update, and publish workflow\n    \n- Public access to published courses\n    \n- Student enrollment system with enrollment tracking\n    \n- Pagination and filtering support\n    \n- Helmet security headers and rate limiting\n    \n- API versioning (/api/v1)\n    \n\nLive Backend:  \n[https://vl-lms-backend.onrender.com](https://vl-lms-backend.onrender.com)\n\nLive Frontend:  \n[https://vartalang-education.vercel.app](https://vartalang-education.vercel.app)\n\nPostman collection includes complete end-to-end test flow:  \nInstructor → Create → Publish  \nStudent → Browse → Enroll → View Enrolled Courses\n\nAll endpoints verified and tested.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "AUTH",
+      "item": [
+        {
+          "name": "register",
+          "id": "08866155-b9ab-4796-89c1-ad81ce1c12dc",
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"name\": \"Student2\",\r\n  \"email\": \"student2@example.com\",\r\n  \"password\": \"Password1\",\r\n  \"role\": \"student\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "1c063aa3-6434-4a74-a399-0918dfa9a813",
+                "exec": [
+                  "pm.collectionVariables.set(\"access_token\", pm.response.json().data.accessToken);\r",
+                  "pm.collectionVariables.set(\"refresh_token\", pm.response.json().data.refreshToken);"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "id": "cc7dd654-0958-4d38-a659-0b4affd3a7a9",
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "id": "6a356bc8-d833-4540-84df-c7ddbb236fce",
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"email\": \"admin@vartalang.in\",\r\n  \"password\": \"Admin@123\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "me",
+          "id": "75a69065-e1a5-49cb-8e52-1bff94a88952",
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/auth/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "logout",
+          "id": "0e158f59-731b-43e9-acf5-db8c1861ccba",
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/logout",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "logout"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "refresh",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "536bb9cf-55e3-4632-ae1d-6cee195ae2e1",
+                "exec": [
+                  "pm.collectionVariables.set(\"access_token\", pm.response.json().data.accessToken);\r",
+                  "pm.collectionVariables.set(\"refresh_token\", pm.response.json().data.refreshToken);"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "id": "8c0b432c-fc2c-4430-a664-58c38577a8e2",
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "id": "9a24430c-ba6f-4b94-ba23-0c520490cfb6",
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"refreshToken\": \"{{refresh_token}}\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/refresh",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "id": "a502d110-5a7f-4021-9bcc-d5b80078be5d",
+      "description": "Handles authentication lifecycle including registration, login, token refresh, logout, and protected user retrieval. Uses JWT access (15 min) and refresh tokens (7 days)."
+    },
+    {
+      "name": "INSTRUCTOR",
+      "item": [
+        {
+          "name": "create courses",
+          "id": "d2648aad-17f5-4025-82d9-5c7b135f87c8",
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"title\": \"English Grammar Foundation\",\r\n  \"description\": \"Complete grammar course\",\r\n  \"language\": \"English\",\r\n  \"level\": \"foundation\",\r\n  \"category\": \"grammar\",\r\n  \"duration\": \"6 weeks\",\r\n  \"modules\": 10,\r\n  \"tags\": [\"grammar\"],\r\n    \"isPublished\": true\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/courses",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "courses"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "my courses",
+          "id": "9ea0b344-10d2-432a-b506-18aeb26b4931",
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/courses/instructor/mine",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "courses",
+                "instructor",
+                "mine"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "publish courses",
+          "id": "2e81cee9-4aec-4d0d-a743-d10df6bff8ce",
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"isPublished\": true\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/courses/{{course_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "courses",
+                "{{course_id}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "id": "3471d579-1ded-4d87-aac5-241773c720c6",
+      "description": "Endpoints restricted to instructor or admin roles. Allows course creation, updating, publishing, and retrieval of instructor-owned courses (including drafts)."
+    },
+    {
+      "name": "STUDENT",
+      "item": [
+        {
+          "name": "enroll",
+          "id": "a7c004cf-35e3-493c-8bfa-1bb880998c0f",
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text",
+                "uuid": "daad8609-def7-404f-94d5-cd5d96de1224"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/courses/{{course_id}}/enroll",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "courses",
+                "{{course_id}}",
+                "enroll"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "enrolled courses",
+          "id": "0b708f0b-8ccc-4648-8a7c-53380de40239",
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/courses/user/enrolled",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "courses",
+                "user",
+                "enrolled"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "id": "066224ac-ee31-43c2-9eb2-cae6a8fabb50",
+      "description": "Protected endpoints accessible by authenticated students. Enables course enrollment and retrieval of enrolled courses."
+    },
+    {
+      "name": "PUBLIC",
+      "item": [
+        {
+          "name": "Health",
+          "id": "8a1e2b84-06e7-4da8-b0ce-b3933935f2c1",
+          "protocolProfileBehavior": {
+            "disableBodyPruning": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"name\": \"Test User\",\r\n  \"email\": \"testuser1@example.com\",\r\n  \"password\": \"Password1\",\r\n  \"role\": \"student\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://vl-lms-backend.onrender.com/health",
+              "protocol": "https",
+              "host": [
+                "vl-lms-backend",
+                "onrender",
+                "com"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "get all courses",
+          "id": "ff0142ba-6ceb-49f9-ad5f-f63517c07c91",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/courses",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "courses"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "id": "564c9d58-e6e4-4287-b627-f7551f264524",
+      "description": "Accessible endpoints. Returns only published courses with pagination and filtering support."
+    },
+    {
+      "name": "ADMIN",
+      "item": [
+        {
+          "name": "admin login",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "id": "988cc32f-7b6b-418d-86fa-cd55e49b3e97",
+                "exec": [
+                  ""
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "id": "124c5a1f-1ae9-4673-a1d0-e1424f688f45",
+                "exec": [
+                  "pm.collectionVariables.set(\"access_token\", pm.response.json().data.accessToken);\r",
+                  "pm.collectionVariables.set(\"refresh_token\", pm.response.json().data.refreshToken);"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "id": "0a6ae155-2a5f-4ec5-8520-d7def6913505",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"email\": \"admin@vartalang.in\",\r\n  \"password\": \"Admin@123\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "access users",
+          "id": "ed8f67c2-0f5a-4bf9-8bfd-daadceb034ff",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/users",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "users"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "update user role",
+          "id": "856b883e-0dc2-4c95-87ae-7e6133d025a7",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"role\": \"instructor\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/users/{{user_id}}/role",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "users",
+                "{{user_id}}",
+                "role"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "id": "b92f15a9-3935-4137-bcc9-8bbc65171ccf",
+      "description": "**Purpose:**  \nAdministrative endpoints for platform-level control and moderation.\n\n**Access Control:**  \nAll endpoints require:\n\n- Valid JWT Access Token\n    \n- Role: `admin`\n    \n\nMiddleware enforced:\n\n```\nprotect → restrictTo('admin')\n\n ```\n\n**Capabilities:**\n\n- View all registered users\n    \n- Update user roles\n    \n- Activate / Deactivate users\n    \n- Permanently delete users\n    \n- Delete platform courses"
+    }
+  ],
+  "variable": [
+    {
+      "id": "579c2543-3bd9-4e95-900f-47053002c29b",
+      "key": "base_url",
+      "value": ""
+    },
+    {
+      "id": "23b19145-3c45-41b2-a60d-b47498fa5f99",
+      "key": "access_token",
+      "value": ""
+    },
+    {
+      "id": "01f830a4-5f7f-49aa-a3db-1fbddd1ea6e1",
+      "key": "refresh_token",
+      "value": ""
+    },
+    {
+      "id": "a5dd3868-1bb7-4d27-9955-db434634435f",
+      "key": "course_id",
+      "value": ""
+    },
+    {
+      "id": "86f8120f-157c-497d-ac61-1a2c503d820b",
+      "key": "user_id",
+      "value": "",
+      "type": "default"
+    }
+  ]
+}
