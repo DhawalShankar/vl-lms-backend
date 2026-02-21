@@ -7,7 +7,7 @@ import 'dotenv/config';
 import connectDB from './config/database.js';
 import authRoutes from './routes/auth.routes.js';
 import courseRoutes from './routes/course.routes.js';
-
+import adminRoutes from './routes/admin.routes.js';
 const app = express();
 
 connectDB();
@@ -35,6 +35,7 @@ app.get('/health', (req, res) =>
 );
 
 // Routes
+app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/auth', authLimiter, authRoutes);
 app.use('/api/v1/courses', courseRoutes);
 
