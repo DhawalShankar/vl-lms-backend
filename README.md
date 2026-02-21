@@ -4,19 +4,10 @@
 
 VartaLang LMS is a production-ready backend system built using **Node.js, Express, and MongoDB**.
 
-This project demonstrates:
+This backend demonstrates secure authentication, role-based authorization, modular REST architecture, and scalable system design suitable for production deployment.
 
-* Secure authentication using JWT (Access + Refresh tokens)
-* Role-Based Access Control (Student, Instructor, Admin)
-* Modular REST API design
-* Protected CRUD operations
-* Course publishing workflow
-* Enrollment system with tracking
-* Production-level middleware (Helmet, Rate Limiting)
-* Clean scalable architecture
-
-This repository contains the **backend implementation**.
-A minimal frontend is included separately to demonstrate API interaction.
+This repository contains the **complete backend implementation**.
+A minimal frontend is deployed separately to demonstrate API interaction.
 
 ---
 
@@ -25,6 +16,9 @@ A minimal frontend is included separately to demonstrate API interaction.
 ### Backend (Render)
 
 [https://vl-lms-backend.onrender.com](https://vl-lms-backend.onrender.com)
+
+Base API URL:
+`https://vl-lms-backend.onrender.com/api/v1`
 
 ### Frontend Demo (Vercel)
 
@@ -36,14 +30,14 @@ A minimal frontend is included separately to demonstrate API interaction.
 
 The system follows a modular MVC structure:
 
-* Controllers → Business logic
-* Routes → API definitions
-* Middleware → Authentication & Authorization
-* Models → Mongoose schemas
-* Config → Database connection
-* Versioned APIs → `/api/v1`
+* **Controllers** → Business logic
+* **Routes** → API definitions
+* **Middleware** → Authentication & Authorization
+* **Models** → Mongoose schemas
+* **Config** → Database connection
+* **Versioned APIs** → `/api/v1`
 
-The backend is designed for extensibility and production-readiness.
+Designed for extensibility and production-readiness.
 
 ---
 
@@ -71,39 +65,59 @@ Roles implemented:
 * Instructor
 * Admin (manually assigned in database)
 
-Access enforcement is handled via middleware:
+Authorization handled via middleware:
 
-* `protect` → verifies JWT
-* `restrictTo(...)` → enforces role authorization
+* `protect` → Verifies JWT
+* `restrictTo(...)` → Enforces role-based access
 
 Examples:
 
 * Only instructors/admin can create courses
 * Only course owner or admin can update/publish
 * Only students can enroll
-* Public can only see published courses
+* Public can view only published courses
+* Only admin can manage users
 
 ---
 
 ### 3️⃣ Course Management Workflow
 
-Instructor Flow:
+**Instructor Flow**
 
-* Create course (draft mode by default)
+* Create course (default: draft)
 * Update course
 * Publish course (`isPublished = true`)
-* View all own courses (draft + published)
+* View own courses (draft + published)
 
-Public Flow:
+**Public Flow**
 
-* View published courses only
-* Pagination & filtering supported
+* View published courses
+* Pagination & filtering support
 
-Student Flow:
+**Student Flow**
 
 * Enroll in published courses
 * View enrolled courses
 * Enrollment count auto-increment
+
+---
+
+### 4️⃣ Admin Management Module
+
+Admin-specific capabilities:
+
+* View all registered users
+* Update user roles (student/instructor/admin)
+* Activate / Deactivate users
+* Delete users
+* View all platform courses
+* Delete courses
+
+Admin routes are protected via:
+
+```
+protect → restrictTo('admin')
+```
 
 ---
 
@@ -117,16 +131,31 @@ Student Flow:
 * POST `/api/v1/auth/logout`
 * POST `/api/v1/auth/refresh`
 
+---
+
+### Admin (Protected)
+
+* GET `/api/v1/admin/users`
+* PATCH `/api/v1/admin/users/:id/role`
+* PATCH `/api/v1/admin/users/:id/toggle`
+* DELETE `/api/v1/admin/users/:id`
+
+---
+
 ### Public
 
 * GET `/api/v1/courses`
 * GET `/api/v1/courses/:id`
+
+---
 
 ### Instructor (Protected)
 
 * POST `/api/v1/courses`
 * PUT `/api/v1/courses/:id`
 * GET `/api/v1/courses/instructor/mine`
+
+---
 
 ### Student (Protected)
 
@@ -143,7 +172,7 @@ Student Flow:
 * email (unique)
 * password (hashed)
 * role (student / instructor / admin)
-* enrolledCourses (reference)
+* enrolledCourses (reference to Course)
 * refreshToken
 * isActive
 * lastLogin
@@ -164,7 +193,7 @@ Student Flow:
 * enrolledCount
 * timestamps
 
-Indexes:
+### Indexes
 
 * language + level
 * instructor
@@ -173,52 +202,61 @@ Indexes:
 
 ## Security Practices
 
-* Password hashing using bcrypt
+* bcrypt password hashing (12 rounds)
 * JWT signed with environment secrets
-* Refresh tokens stored securely in database
-* Rate limiting for brute force protection
-* Helmet for secure HTTP headers
+* Refresh token stored securely in DB
+* Role-based middleware enforcement
+* Helmet security headers
+* Rate limiting (global + auth-specific)
 * CORS restricted to frontend origin
-* No sensitive credentials stored in repository
-* Admin role cannot self-register
+* No credentials committed to repository
+* Admin self-registration disabled
 
 ---
 
 ## Scalability & Design Considerations
 
-* Modular folder structure
+* Modular architecture
 * Versioned API (`/api/v1`)
-* Middleware-based authorization
+* Stateless authentication
 * Indexed database queries
-* Stateless JWT authentication
-* Easy integration with:
+* Separation of concerns
+* Easily extendable to:
 
   * Redis caching
-  * Logging systems
-  * Docker deployment
+  * Centralized logging
+  * Docker containerization
   * Microservices architecture
 
-The backend is structured to support horizontal scaling and feature expansion.
+The backend is structured for horizontal scaling and future feature expansion.
 
 ---
 
 ## End-to-End Tested Flows
 
-Instructor:
+### Instructor
 
-1. Register/Login
+1. Register / Login
 2. Create course
 3. Publish course
 4. View own courses
 
-Student:
+### Student
 
-1. Register/Login
+1. Register / Login
 2. Browse published courses
 3. Enroll
 4. View enrolled courses
 
-All flows verified using Postman collection included in repository.
+### Admin
+
+1. Login
+2. View all users
+3. Update roles
+4. Toggle user status
+5. Delete users / courses
+
+All flows verified via Postman collection.
 
 ---
 
@@ -228,7 +266,12 @@ Postman collection included:
 
 `VL-LMS-API.postman_collection.json`
 
-This includes complete authentication, instructor, student, and public flows.
+Contains complete end-to-end test flow for:
+
+* Authentication
+* Instructor operations
+* Student enrollment
+* Admin management
 
 ---
 
@@ -268,12 +311,12 @@ npm run dev
 
 This backend was developed as part of a Backend Developer Internship Assignment focused on:
 
-* Secure API design
+* Secure REST API design
 * Role-based access control
 * Database modeling
 * Authentication best practices
+* Production-grade middleware
 * Scalable system architecture
 
-The frontend was implemented solely to demonstrate API interaction and protected route handling.
-
+The frontend was implemented strictly to demonstrate API interaction and protected route behavior.
 
