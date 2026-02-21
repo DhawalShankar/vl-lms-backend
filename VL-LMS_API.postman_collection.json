@@ -78,7 +78,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\r\n  \"email\": \"admin@admin.in\",\r\n  \"password\": \"admin@123\"\r\n}",
+              "raw": "{\r\n  \"email\": \"{{admin-email}}\",\r\n  \"password\": \"{{password}}\"\r\n}",
               "options": {
                 "raw": {
                   "language": "json"
