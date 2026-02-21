@@ -276,3 +276,4 @@ This backend was developed as part of a Backend Developer Internship Assignment 
 
 The frontend was implemented solely to demonstrate API interaction and protected route handling.
 
+
