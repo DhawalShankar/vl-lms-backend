@@ -14,7 +14,8 @@ connectDB();
 app.set('trust proxy', 1); // 👈 REQUIRED for Render
 app.use(helmet());
 const allowedOrigins = [
-  process.env.FRONTEND_URL,          // e.g. https://vartalang-education.vercel.app
+  process.env.FRONTEND_URL,
+  'learn.vartalang.in',
   'http://localhost:3000',
   'http://localhost:3001',
 ].filter(Boolean);
