@@ -13,8 +13,21 @@ const app = express();
 connectDB();
 app.set('trust proxy', 1); // 👈 REQUIRED for Render
 app.use(helmet());
+const allowedOrigins = [
+  process.env.FRONTEND_URL,          // e.g. https://vartalang-education.vercel.app
+  'http://localhost:3000',
+  'http://localhost:3001',
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: (origin, callback) => {
+    // Allow requests with no origin (e.g. Postman, curl) and whitelisted origins
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS blocked: ${origin}`));
+    }
+  },
   credentials: true
 }));
 

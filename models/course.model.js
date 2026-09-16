@@ -1,5 +1,32 @@
 import mongoose from 'mongoose';
 
+const resourceSchema = new mongoose.Schema({
+  type: {
+    type: String,
+    enum: ['video', 'pdf', 'blog', 'audio'],
+    required: true
+  },
+  title: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: [200, 'Resource title cannot exceed 200 characters']
+  },
+  description: {
+    type: String,
+    trim: true,
+    maxlength: [500, 'Resource description cannot exceed 500 characters']
+  },
+  url: {
+    type: String,
+    trim: true
+  },
+  duration: {
+    type: String,
+    trim: true
+  }
+}, { _id: true });
+
 const courseSchema = new mongoose.Schema({
   title: {
     type: String,
@@ -38,7 +65,9 @@ const courseSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
-  tags: [{ type: String, trim: true }]
+  tags: [{ type: String, trim: true }],
+  resources: [resourceSchema],
+  thumbnail: { type: String, trim: true }
 }, {
   timestamps: true,
   toJSON: { versionKey: false }
@@ -46,6 +75,7 @@ const courseSchema = new mongoose.Schema({
 
 courseSchema.index({ language: 1, level: 1 });
 courseSchema.index({ instructor: 1 });
+courseSchema.index({ isPublished: 1, createdAt: -1 });
 
 const Course = mongoose.model('Course', courseSchema);
 export default Course;

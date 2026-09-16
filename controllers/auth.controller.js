@@ -1,5 +1,6 @@
 // auth controller
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import User from '../models/user.model.js';
 
 const generateTokens = (userId, role) => {
@@ -18,7 +19,7 @@ const generateTokens = (userId, role) => {
 
 export const register = async (req, res, next) => {
   try {
-    const { name, email, password, role } = req.body; // ✅ role destructure kiya
+    const { name, email, password, role } = req.body;
 
     if (!name || !email || !password)
       return res.status(400).json({ success: false, message: 'Name, email, and password are required.' });
@@ -29,7 +30,7 @@ export const register = async (req, res, next) => {
     if (!/(?=.*[A-Z])(?=.*\d)/.test(password))
       return res.status(400).json({ success: false, message: 'Password must contain at least one uppercase letter and one number.' });
 
-    // ✅ Sirf allowed roles accept karo — admin kabhi bhi self-register nahi kar sakta
+    // Admin cannot self-register
     const allowedRoles = ['student', 'instructor'];
     const assignedRole = allowedRoles.includes(role) ? role : 'student';
 
@@ -37,7 +38,7 @@ export const register = async (req, res, next) => {
     if (existing)
       return res.status(409).json({ success: false, message: 'An account with this email already exists.' });
 
-    const user = await User.create({ name, email, password, role: assignedRole }); // ✅ role pass kiya
+    const user = await User.create({ name, email, password, role: assignedRole });
     const { accessToken, refreshToken } = generateTokens(user._id, user.role);
 
     user.refreshToken = refreshToken;
@@ -121,4 +122,91 @@ export const logout = async (req, res, next) => {
 
 export const getMe = (req, res) => {
   res.status(200).json({ success: true, data: { user: req.user } });
+};
+
+// ── Forgot Password ───────────────────────────────────────────────────────────
+export const forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    if (!email)
+      return res.status(400).json({ success: false, message: 'Email is required.' });
+
+    const user = await User.findOne({ email: email.toLowerCase() }).select('+passwordResetToken +passwordResetExpiry');
+    if (!user) {
+      // Don't reveal if email exists — always return success
+      return res.status(200).json({
+        success: true,
+        message: 'If that email is registered, you will receive reset instructions.'
+      });
+    }
+
+    const resetToken = user.createPasswordResetToken();
+    await user.save({ validateBeforeSave: false });
+
+    const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/forgot-password?token=${resetToken}`;
+
+    // In production: send email via nodemailer / SendGrid / Resend
+    // For now: log to console so you can test the flow
+    console.log(`\n🔑 Password Reset Token for ${email}:`);
+    console.log(`   Reset URL: ${resetUrl}`);
+    console.log(`   Raw token: ${resetToken}`);
+    console.log(`   Expires: ${user.passwordResetExpiry}\n`);
+
+    res.status(200).json({
+      success: true,
+      message: 'If that email is registered, you will receive reset instructions.',
+      // Remove in production! For development only:
+      ...(process.env.NODE_ENV !== 'production' && { devResetUrl: resetUrl })
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ── Reset Password ────────────────────────────────────────────────────────────
+export const resetPassword = async (req, res, next) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    if (!password)
+      return res.status(400).json({ success: false, message: 'New password is required.' });
+
+    if (password.length < 8)
+      return res.status(400).json({ success: false, message: 'Password must be at least 8 characters.' });
+
+    if (!/(?=.*[A-Z])(?=.*\d)/.test(password))
+      return res.status(400).json({ success: false, message: 'Password must contain at least one uppercase letter and one number.' });
+
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    const user = await User.findOne({
+      passwordResetToken: hashedToken,
+      passwordResetExpiry: { $gt: Date.now() }
+    }).select('+passwordResetToken +passwordResetExpiry');
+
+    if (!user)
+      return res.status(400).json({ success: false, message: 'Invalid or expired reset token. Please request a new one.' });
+
+    user.password = password;
+    user.passwordResetToken = undefined;
+    user.passwordResetExpiry = undefined;
+    user.refreshToken = null; // Invalidate all sessions
+    await user.save();
+
+    // Issue fresh tokens so user is immediately logged in
+    const { accessToken, refreshToken } = generateTokens(user._id, user.role);
+    user.refreshToken = refreshToken;
+    await user.save({ validateBeforeSave: false });
+
+    console.log(`✅ Password reset successful for: ${user.email}`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Password reset successfully! You are now logged in.',
+      data: { user, accessToken, refreshToken }
+    });
+  } catch (err) {
+    next(err);
+  }
 };
