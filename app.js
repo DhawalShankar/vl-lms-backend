@@ -15,7 +15,8 @@ app.set('trust proxy', 1); // 👈 REQUIRED for Render
 app.use(helmet());
 const allowedOrigins = [
   process.env.FRONTEND_URL,
-  'learn.vartalang.in',
+  'https://www.learn.vartalang.in',
+  'https://learn.vartalang.in',
   'http://localhost:3000',
   'http://localhost:3001',
 ].filter(Boolean);
