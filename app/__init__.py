@@ -1,0 +1,1 @@
+"""VartaLang LMS Backend Application."""

@@ -1,53 +1,46 @@
-# Dependencies
-node_modules/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Logs
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# Virtual Environments
+venv/
+.venv/
+ENV/
+env/
 
 # Environment variables
 .env
-.env.*
-!.env.example
+.env.local
 
-# Build output
-dist/
-build/
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
 
-# Temporary files
-tmp/
-temp/
+# Testing & Coverage
+.coverage
+htmlcov/
+.pytest_cache/
 
-# OS files
+# OS
 .DS_Store
 Thumbs.db
-
-# IDE files
-.vscode/
-.idea/
-
-# Coverage
-coverage/
-
-# Cache
-.cache/
-
-# Debug
-*.pid
-*.seed
-*.pid.lock
-
-# Optional - if using uploads
-uploads/
-
-# Optional - if using local database
-*.db
-
-# Render / Railway
-.vercel
-
-postman/
-.postman/
