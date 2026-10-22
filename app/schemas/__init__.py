@@ -18,6 +18,11 @@ from app.schemas.course import (
     CourseOut,
     CourseDetailOut,
 )
+from app.schemas.enrollment import (
+    EnrollmentOut,
+    LessonProgressToggleResponse,
+    CourseProgressDetail,
+)
 
 __all__ = [
     "UserBase",
@@ -40,4 +45,7 @@ __all__ = [
     "CourseStatusUpdate",
     "CourseOut",
     "CourseDetailOut",
+    "EnrollmentOut",
+    "LessonProgressToggleResponse",
+    "CourseProgressDetail",
 ]
