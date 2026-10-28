@@ -10,16 +10,22 @@ async def verify_sso_code_with_main_platform(code: str) -> Dict[str, Any]:
     with the main VartaLang platform.
     """
     # 1. Dev/Mock fallback for local testing when main platform is offline
-    if settings.DEBUG and code.startswith("mock_"):
-        # e.g., mock_student_123 or mock_instructor_456
-        role = "instructor" if "instructor" in code else "student"
-        return {
-            "vartalang_user_id": f"vl_{code}",
-            "email": f"{code}@vartalang.in",
-            "full_name": f"VartaLang {role.capitalize()}",
-            "role": role,
-            "avatar_url": None,
-        }
+    if settings.DEBUG:
+        if "unlinked" in code or code.startswith("not_found"):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No linked account found with main VartaLang. Please register or create your account.",
+            )
+        if code.startswith("mock_"):
+            # e.g., mock_student_123 or mock_instructor_456
+            role = "instructor" if "instructor" in code else "student"
+            return {
+                "vartalang_user_id": f"vl_{code}",
+                "email": f"{code}@vartalang.in",
+                "full_name": f"VartaLang {role.capitalize()}",
+                "role": role,
+                "avatar_url": None,
+            }
 
     # 2. Production / Live server-to-server verification
     headers = {

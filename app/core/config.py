@@ -12,8 +12,13 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: Union[List[str], str] = [
         "http://localhost:3000",
+        "http://127.0.0.1:3000",
         "http://localhost:3001",
+        "http://127.0.0.1:3001",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
         "https://learn.vartalang.in",
+        "https://vartalang.in",
     ]
 
     @field_validator("CORS_ORIGINS", mode="before")
