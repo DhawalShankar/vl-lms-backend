@@ -10,7 +10,7 @@ async def verify_sso_code_with_main_platform(code: str) -> Dict[str, Any]:
     with the main VartaLang platform.
     """
     # 1. Dev/Mock fallback for local testing when main platform is offline
-    if settings.DEBUG:
+    if settings.ENABLE_DEV_LOGIN:
         if "unlinked" in code or code.startswith("not_found"):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -35,7 +35,7 @@ async def verify_sso_code_with_main_platform(code: str) -> Dict[str, Any]:
     payload = {"code": code}
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=45.0) as client:
             response = await client.post(
                 settings.VARTALANG_MAIN_AUTH_URL,
                 json=payload,

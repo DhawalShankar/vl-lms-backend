@@ -1,3 +1,4 @@
+# app/api/v1/endpoints/auth.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
@@ -30,22 +31,23 @@ async def exchange_sso_code(
     """
     # 1. Verify code server-to-server
     identity = await verify_sso_code_with_main_platform(payload.code)
+    email = identity["email"].lower()
 
     # 2. Find or create user in our database
     user = (
         db.query(User)
         .filter(
-            (User.email == identity["email"])
+            (User.email == email)
             | (User.vartalang_user_id == identity["vartalang_user_id"])
         )
         .first()
     )
 
     if not user:
-        # First-time SSO login -> Provision new student/instructor record
+        # First-time SSO login -> Provision new user record
         user = User(
             vartalang_user_id=identity["vartalang_user_id"],
-            email=identity["email"],
+            email=email,
             full_name=identity["full_name"],
             role=identity["role"],
             avatar_url=identity.get("avatar_url"),
@@ -54,10 +56,15 @@ async def exchange_sso_code(
         db.commit()
         db.refresh(user)
     else:
-        # Existing user -> Synchronize latest profile info
+        # Existing user -> sync profile info only.
+        # Role is intentionally NOT synced: it is managed inside the LMS.
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account disabled.",
+            )
         user.vartalang_user_id = identity["vartalang_user_id"]
         user.full_name = identity["full_name"]
-        user.role = identity["role"]
         if identity.get("avatar_url"):
             user.avatar_url = identity["avatar_url"]
         db.commit()
@@ -79,7 +86,7 @@ async def exchange_sso_code(
 @router.post(
     "/dev-login",
     response_model=TokenResponse,
-    summary="Development login helper (Active in Development/Debug mode)",
+    summary="Development login helper (only when ENABLE_DEV_LOGIN=true)",
 )
 def dev_login(
     payload: DevLoginRequest,
@@ -88,11 +95,12 @@ def dev_login(
     """
     Developer helper endpoint to quickly simulate student, instructor,
     or admin logins without requiring the main VartaLang server.
+    Disabled unless ENABLE_DEV_LOGIN=true is explicitly set.
     """
-    if not settings.DEBUG and settings.ENVIRONMENT == "production":
+    if not settings.ENABLE_DEV_LOGIN:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Dev login is disabled in production environment.",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not found",
         )
 
     user = db.query(User).filter(User.email == payload.email).first()

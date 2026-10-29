@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "VartaLang LMS"
     ENVIRONMENT: str = "development"
     PORT: int = 8000
-    DEBUG: bool = True
+    DEBUG: bool = False
 
     # CORS
     CORS_ORIGINS: Union[List[str], str] = [
@@ -49,7 +49,8 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
     # SSO Handshake with Main VartaLang
-    VARTALANG_MAIN_AUTH_URL: str = "https://api.vartalang.in/api/v1/sso/verify"
+    # app/core/config.py
+    VARTALANG_MAIN_AUTH_URL: str = "https://vl-backend-9zi0.onrender.com/sso/verify"
     SSO_SHARED_SECRET: str = "default_sso_secret"
 
     # Razorpay
