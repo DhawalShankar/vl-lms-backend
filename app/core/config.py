@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     PORT: int = 8000
     DEBUG: bool = False
+    ENABLE_DEV_LOGIN: bool = False
 
     # CORS
     CORS_ORIGINS: Union[List[str], str] = [
