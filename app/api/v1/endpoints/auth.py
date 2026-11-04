@@ -44,7 +44,7 @@ async def exchange_sso_code(
     )
 
     if not user:
-        # First-time SSO login -> Provision new user record
+        # First-time SSO login -> provision new user record
         user = User(
             vartalang_user_id=identity["vartalang_user_id"],
             email=email,
@@ -56,8 +56,7 @@ async def exchange_sso_code(
         db.commit()
         db.refresh(user)
     else:
-        # Existing user -> sync profile info only.
-        # Role is intentionally NOT synced: it is managed inside the LMS.
+        # Existing user -> sync profile info and role from main VartaLang
         if not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -65,6 +64,7 @@ async def exchange_sso_code(
             )
         user.vartalang_user_id = identity["vartalang_user_id"]
         user.full_name = identity["full_name"]
+        user.role = identity["role"]  # main VartaLang is the source of truth for roles
         if identity.get("avatar_url"):
             user.avatar_url = identity["avatar_url"]
         db.commit()

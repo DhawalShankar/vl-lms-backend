@@ -1,7 +1,10 @@
+# app/services/sso.py
 from typing import Any, Dict
 import httpx
 from fastapi import HTTPException, status
 from app.core.config import settings
+
+VALID_ROLES = {"student", "instructor", "admin"}
 
 
 async def verify_sso_code_with_main_platform(code: str) -> Dict[str, Any]:
@@ -9,7 +12,7 @@ async def verify_sso_code_with_main_platform(code: str) -> Dict[str, Any]:
     Performs server-to-server verification of the one-time SSO code
     with the main VartaLang platform.
     """
-    # 1. Dev/Mock fallback for local testing when main platform is offline
+    # 1. Dev/Mock fallback, only when ENABLE_DEV_LOGIN is explicitly on
     if settings.ENABLE_DEV_LOGIN:
         if "unlinked" in code or code.startswith("not_found"):
             raise HTTPException(
@@ -56,11 +59,15 @@ async def verify_sso_code_with_main_platform(code: str) -> Dict[str, Any]:
                 detail="Malformed user payload received from VartaLang identity provider.",
             )
 
+        role = str(user_info.get("role", "student")).lower()
+        if role not in VALID_ROLES:
+            role = "student"
+
         return {
             "vartalang_user_id": str(user_info.get("id") or user_info.get("vartalang_user_id")),
             "email": user_info["email"],
             "full_name": user_info.get("full_name") or user_info.get("name") or "VartaLang User",
-            "role": user_info.get("role", "student").lower(),
+            "role": role,
             "avatar_url": user_info.get("avatar_url") or user_info.get("avatar"),
         }
 
