@@ -1,12 +1,12 @@
 from datetime import datetime
-from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID
-import uuid6
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from app.api.deps import get_current_user, get_optional_current_user, require_role
+
+from app.api.deps import get_optional_current_user, require_role
 from app.core.database import get_db
 from app.models.course import Course, Lesson, Module
 from app.models.enrollment import Enrollment
@@ -39,15 +39,10 @@ STANDARD_VERNACULAR_LANGUAGES = [
 ]
 
 
-def _build_course_out(c: Course, db: Session) -> CourseOut:
-    modules_count = len(c.modules)
-    lessons_count = sum(len(m.lessons) for m in c.modules)
-    enrolled_count = len(c.enrollments) if c.enrollments else 0
-    is_pub = (c.status == "published")
-
-    # Parse stored resources
-    raw_resources = getattr(c, "resources", None) or []
-    resources = [
+def _parse_resources(course: Course) -> List[CourseResource]:
+    """Turn the stored JSON resources into CourseResource objects."""
+    raw_resources = getattr(course, "resources", None) or []
+    return [
         CourseResource(
             id=r.get("id", f"res-{i}"),
             type=r.get("type", "video"),
@@ -58,6 +53,13 @@ def _build_course_out(c: Course, db: Session) -> CourseOut:
         )
         for i, r in enumerate(raw_resources)
     ]
+
+
+def _build_course_out(c: Course, db: Session) -> CourseOut:
+    modules_count = len(c.modules)
+    lessons_count = sum(len(m.lessons) for m in c.modules)
+    enrolled_count = len(c.enrollments) if c.enrollments else 0
+    is_pub = (c.status == "published")
 
     return CourseOut(
         id=c.id,
@@ -75,7 +77,7 @@ def _build_course_out(c: Course, db: Session) -> CourseOut:
         is_published=is_pub,
         is_featured=getattr(c, "is_featured", False) or False,
         tags=getattr(c, "tags", None) or [],
-        resources=resources,
+        resources=_parse_resources(c),
         instructor_id=c.instructor_id,
         instructor=InstructorPublic(
             id=c.instructor.id,
@@ -90,6 +92,31 @@ def _build_course_out(c: Course, db: Session) -> CourseOut:
         created_at=c.created_at,
         updated_at=c.updated_at,
     )
+
+
+def _lesson_out(lesson: Lesson, unlocked: bool = True) -> LessonOut:
+    return LessonOut(
+        id=lesson.id,
+        module_id=lesson.module_id,
+        title=lesson.title,
+        description=lesson.description,
+        youtube_video_id=lesson.youtube_video_id if unlocked else None,
+        notes_url=lesson.notes_url if unlocked else None,
+        order_index=lesson.order_index,
+        is_preview=lesson.is_preview,
+        is_unlocked=unlocked,
+        created_at=lesson.created_at,
+        updated_at=lesson.updated_at,
+    )
+
+
+def _get_owned_course(db: Session, course_id: UUID, current_user: User, action: str = "modify") -> Course:
+    course = db.get(Course, course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    if course.instructor_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail=f"Not authorized to {action} this course")
+    return course
 
 
 # ============================================================================
@@ -271,22 +298,7 @@ def get_course_detail(
         lessons_out: List[LessonOut] = []
         for l in m.lessons:
             total_lessons += 1
-            can_access = has_full_access or l.is_preview
-            lessons_out.append(
-                LessonOut(
-                    id=l.id,
-                    module_id=l.module_id,
-                    title=l.title,
-                    description=l.description,
-                    youtube_video_id=l.youtube_video_id if can_access else None,
-                    notes_url=l.notes_url if can_access else None,
-                    order_index=l.order_index,
-                    is_preview=l.is_preview,
-                    is_unlocked=can_access,
-                    created_at=l.created_at,
-                    updated_at=l.updated_at,
-                )
-            )
+            lessons_out.append(_lesson_out(l, unlocked=has_full_access or l.is_preview))
         modules_out.append(
             ModuleOut(
                 id=m.id,
@@ -302,19 +314,6 @@ def get_course_detail(
 
     enrolled_count = len(course.enrollments) if course.enrollments else 0
     is_pub = (course.status == "published")
-
-    raw_resources = getattr(course, "resources", None) or []
-    resources = [
-        CourseResource(
-            id=r.get("id", f"res-{i}"),
-            type=r.get("type", "video"),
-            title=r.get("title", "Resource"),
-            url=r.get("url", ""),
-            duration=r.get("duration"),
-            description=r.get("description"),
-        )
-        for i, r in enumerate(raw_resources)
-    ]
 
     return CourseDetailOut(
         id=course.id,
@@ -332,7 +331,7 @@ def get_course_detail(
         is_published=is_pub,
         is_featured=getattr(course, "is_featured", False) or False,
         tags=getattr(course, "tags", None) or [],
-        resources=resources,
+        resources=_parse_resources(course),
         instructor_id=course.instructor_id,
         instructor=InstructorPublic(
             id=course.instructor.id,
@@ -366,19 +365,7 @@ def get_course_resources(
     course = db.get(Course, course_id)
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
-
-    raw_resources = getattr(course, "resources", None) or []
-    return [
-        CourseResource(
-            id=r.get("id", f"res-{i}"),
-            type=r.get("type", "video"),
-            title=r.get("title", "Resource"),
-            url=r.get("url", ""),
-            duration=r.get("duration"),
-            description=r.get("description"),
-        )
-        for i, r in enumerate(raw_resources)
-    ]
+    return _parse_resources(course)
 
 
 @router.post(
@@ -393,12 +380,7 @@ def add_course_resource(
     current_user: User = Depends(require_role(["instructor", "admin"])),
     db: Session = Depends(get_db),
 ):
-    course = db.get(Course, course_id)
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
-
-    if course.instructor_id != current_user.id and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to modify this course")
+    course = _get_owned_course(db, course_id, current_user)
 
     new_id = f"res-{int(datetime.now().timestamp() * 1000)}"
     new_res = {
@@ -412,7 +394,7 @@ def add_course_resource(
 
     current_res = list(getattr(course, "resources", None) or [])
     current_res.append(new_res)
-    course.resources = current_res
+    course.resources = current_res  # reassign so SQLAlchemy detects the JSON change
     db.commit()
     db.refresh(course)
 
@@ -430,16 +412,10 @@ def delete_course_resource(
     current_user: User = Depends(require_role(["instructor", "admin"])),
     db: Session = Depends(get_db),
 ):
-    course = db.get(Course, course_id)
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
-
-    if course.instructor_id != current_user.id and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to modify this course")
+    course = _get_owned_course(db, course_id, current_user)
 
     current_res = list(getattr(course, "resources", None) or [])
-    filtered_res = [r for r in current_res if r.get("id") != resource_id]
-    course.resources = filtered_res
+    course.resources = [r for r in current_res if r.get("id") != resource_id]
     db.commit()
     return None
 
@@ -554,22 +530,22 @@ def update_course(
     current_user: User = Depends(require_role(["instructor", "admin"])),
     db: Session = Depends(get_db),
 ):
-    course = db.get(Course, course_id)
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
-
-    if course.instructor_id != current_user.id and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to edit this course")
+    course = _get_owned_course(db, course_id, current_user, action="edit")
 
     update_data = payload.model_dump(exclude_unset=True)
+
+    # `modules` is a relationship on Course (not a count) and `status` is changed
+    # only via PATCH /{course_id}/status, so never copy them with setattr below.
+    update_data.pop("modules", None)
+    update_data.pop("status", None)
 
     # Handle isPublished / is_published boolean updates
     if "isPublished" in update_data and update_data["isPublished"] is not None:
         course.status = "published" if update_data["isPublished"] else "draft"
-        del update_data["isPublished"]
+    update_data.pop("isPublished", None)
     if "is_published" in update_data and update_data["is_published"] is not None:
         course.status = "published" if update_data["is_published"] else "draft"
-        del update_data["is_published"]
+    update_data.pop("is_published", None)
 
     # Handle resources list serialization
     if "resources" in update_data and update_data["resources"] is not None:
@@ -598,12 +574,7 @@ def set_course_status(
     current_user: User = Depends(require_role(["instructor", "admin"])),
     db: Session = Depends(get_db),
 ):
-    course = db.get(Course, course_id)
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
-
-    if course.instructor_id != current_user.id and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to change course status")
+    course = _get_owned_course(db, course_id, current_user, action="change the status of")
 
     course.status = payload.status
     db.commit()
@@ -622,12 +593,7 @@ def delete_course(
     current_user: User = Depends(require_role(["instructor", "admin"])),
     db: Session = Depends(get_db),
 ):
-    course = db.get(Course, course_id)
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
-
-    if course.instructor_id != current_user.id and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to delete this course")
+    course = _get_owned_course(db, course_id, current_user, action="delete")
 
     db.delete(course)
     db.commit()
@@ -650,12 +616,7 @@ def create_module(
     current_user: User = Depends(require_role(["instructor", "admin"])),
     db: Session = Depends(get_db),
 ):
-    course = db.get(Course, course_id)
-    if not course:
-        raise HTTPException(status_code=404, detail="Course not found")
-
-    if course.instructor_id != current_user.id and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to modify this course")
+    _get_owned_course(db, course_id, current_user)
 
     existing_count = db.query(Module).filter(Module.course_id == course_id).count()
     order_index = payload.order_index if payload.order_index > 1 else (existing_count + 1)
@@ -760,19 +721,7 @@ def create_lesson(
     db.commit()
     db.refresh(lesson)
 
-    return LessonOut(
-        id=lesson.id,
-        module_id=lesson.module_id,
-        title=lesson.title,
-        description=lesson.description,
-        youtube_video_id=lesson.youtube_video_id,
-        notes_url=lesson.notes_url,
-        order_index=lesson.order_index,
-        is_preview=lesson.is_preview,
-        is_unlocked=True,
-        created_at=lesson.created_at,
-        updated_at=lesson.updated_at,
-    )
+    return _lesson_out(lesson)
 
 
 @router.put(
@@ -800,19 +749,7 @@ def update_lesson(
     db.commit()
     db.refresh(lesson)
 
-    return LessonOut(
-        id=lesson.id,
-        module_id=lesson.module_id,
-        title=lesson.title,
-        description=lesson.description,
-        youtube_video_id=lesson.youtube_video_id,
-        notes_url=lesson.notes_url,
-        order_index=lesson.order_index,
-        is_preview=lesson.is_preview,
-        is_unlocked=True,
-        created_at=lesson.created_at,
-        updated_at=lesson.updated_at,
-    )
+    return _lesson_out(lesson)
 
 
 @router.delete(

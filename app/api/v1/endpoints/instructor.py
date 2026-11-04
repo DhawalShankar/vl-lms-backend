@@ -1,13 +1,40 @@
 from typing import Optional
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-from app.api.deps import get_current_user, get_optional_current_user, require_role
+
+from app.api.deps import get_optional_current_user, require_role
 from app.core.database import get_db
 from app.models.instructor import InstructorProfile
 from app.models.user import User
 from app.schemas.instructor import InstructorProfileIn, InstructorProfileOut
 
 router = APIRouter()
+
+DEFAULT_TITLE = "Language Educator & Linguistic Mentor"
+DEFAULT_BIO = (
+    "Passionate about making Indian regional languages accessible to learners "
+    "across India and the global diaspora."
+)
+
+
+def _profile_out(profile: InstructorProfile, include_private: bool) -> InstructorProfileOut:
+    """Payout details (UPI / bank) are only included for the profile owner."""
+    return InstructorProfileOut(
+        name=profile.name,
+        title=profile.title,
+        bio=profile.bio,
+        languages=profile.languages or ["Hindi", "English"],
+        experienceYears=profile.experience_years,
+        avatarUrl=profile.avatar_url or "",
+        twitter=profile.twitter or "",
+        linkedin=profile.linkedin or "",
+        youtube=profile.youtube or "",
+        website=profile.website or "",
+        upiId=(profile.upi_id or "") if include_private else "",
+        bankAccount=(profile.bank_account or "") if include_private else "",
+    )
 
 
 @router.get(
@@ -20,49 +47,42 @@ def get_instructor_profile(
     current_user: Optional[User] = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):
-    target_user_id = user_id or (str(current_user.id) if current_user else None)
-
-    if target_user_id:
+    target_id: Optional[UUID] = None
+    if user_id:
         try:
-            profile = (
-                db.query(InstructorProfile)
-                .filter(InstructorProfile.user_id == target_user_id)
-                .first()
-            )
-            if profile:
-                return InstructorProfileOut(
-                    name=profile.name,
-                    title=profile.title,
-                    bio=profile.bio,
-                    languages=profile.languages or ["Hindi", "English"],
-                    experienceYears=profile.experience_years,
-                    avatarUrl=profile.avatar_url or "",
-                    twitter=profile.twitter or "",
-                    linkedin=profile.linkedin or "",
-                    youtube=profile.youtube or "",
-                    website=profile.website or "",
-                    upiId=profile.upi_id or "",
-                    bankAccount=profile.bank_account or "",
-                )
-        except Exception:
-            pass
+            target_id = UUID(user_id)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user id")
+    elif current_user:
+        target_id = current_user.id
 
-    # Default profile response if no database record exists yet
-    default_name = current_user.full_name if current_user else "Language Educator"
-    default_avatar = current_user.avatar_url if current_user else ""
+    is_owner = bool(current_user and target_id and current_user.id == target_id)
+
+    if target_id:
+        profile = (
+            db.query(InstructorProfile)
+            .filter(InstructorProfile.user_id == target_id)
+            .first()
+        )
+        if profile:
+            return _profile_out(profile, include_private=is_owner)
+
+    # No saved profile yet: neutral defaults only (no fake social links or payout details)
+    default_name = current_user.full_name if (current_user and is_owner) else "Language Educator"
+    default_avatar = (current_user.avatar_url if (current_user and is_owner) else "") or ""
     return InstructorProfileOut(
         name=default_name,
-        title="Language Educator & Linguistic Mentor",
-        bio="Passionate about making Indian regional languages accessible to learners across India and the global diaspora.",
+        title=DEFAULT_TITLE,
+        bio=DEFAULT_BIO,
         languages=["Hindi", "English"],
         experienceYears=5,
-        avatarUrl=default_avatar or "",
-        twitter="https://x.com/vartalang",
-        linkedin="https://linkedin.com/company/vartalang",
-        youtube="https://youtube.com/@vartalang",
-        website="https://vartalang.in",
-        upiId="educator@upi",
-        bankAccount="HDFC0001234 •••• 5678",
+        avatarUrl=default_avatar,
+        twitter="",
+        linkedin="",
+        youtube="",
+        website="",
+        upiId="",
+        bankAccount="",
     )
 
 
@@ -121,18 +141,5 @@ def save_instructor_profile(
     db.commit()
     db.refresh(profile)
 
-    return InstructorProfileOut(
-        name=profile.name,
-        title=profile.title,
-        bio=profile.bio,
-        languages=profile.languages or ["Hindi", "English"],
-        experienceYears=profile.experience_years,
-        avatarUrl=profile.avatar_url or "",
-        twitter=profile.twitter or "",
-        linkedin=profile.linkedin or "",
-        youtube=profile.youtube or "",
-        website=profile.website or "",
-        upiId=profile.upi_id or "",
-        bankAccount=profile.bank_account or "",
-    )
-
+    # The owner just saved this, so private payout fields are included
+    return _profile_out(profile, include_private=True)
