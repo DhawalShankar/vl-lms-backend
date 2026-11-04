@@ -8,6 +8,8 @@ if TYPE_CHECKING:
     from app.models.enrollment import Enrollment, LessonProgress
     from app.models.payment import Payment
     from app.models.group import Group, GroupMember, Message
+    from app.models.instructor import InstructorProfile
+    from app.models.streak import UserStreakRecord
 
 
 class User(TimeStampedModel):
@@ -48,6 +50,12 @@ class User(TimeStampedModel):
     )
     messages: Mapped[List["Message"]] = relationship(
         "Message", back_populates="sender", cascade="all, delete-orphan"
+    )
+    instructor_profile: Mapped[Optional["InstructorProfile"]] = relationship(
+        "InstructorProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
+    streak_record: Mapped[Optional["UserStreakRecord"]] = relationship(
+        "UserStreakRecord", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

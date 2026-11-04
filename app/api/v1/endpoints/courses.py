@@ -1,3 +1,5 @@
+from datetime import datetime
+from decimal import Decimal
 from typing import List, Optional
 from uuid import UUID
 import uuid6
@@ -14,6 +16,8 @@ from app.schemas.course import (
     CourseCreate,
     CourseDetailOut,
     CourseOut,
+    CourseResource,
+    CourseResourceCreate,
     CourseStatusUpdate,
     CourseUpdate,
     InstructorLanguageSummary,
@@ -29,6 +33,64 @@ from app.schemas.course import (
 
 router = APIRouter()
 
+STANDARD_VERNACULAR_LANGUAGES = [
+    "Hindi", "English", "Tamil", "Telugu", "Bengali", "Marathi",
+    "Gujarati", "Kannada", "Malayalam", "Punjabi", "Odia", "Assamese", "Urdu", "Sanskrit"
+]
+
+
+def _build_course_out(c: Course, db: Session) -> CourseOut:
+    modules_count = len(c.modules)
+    lessons_count = sum(len(m.lessons) for m in c.modules)
+    enrolled_count = len(c.enrollments) if c.enrollments else 0
+    is_pub = (c.status == "published")
+
+    # Parse stored resources
+    raw_resources = getattr(c, "resources", None) or []
+    resources = [
+        CourseResource(
+            id=r.get("id", f"res-{i}"),
+            type=r.get("type", "video"),
+            title=r.get("title", "Resource"),
+            url=r.get("url", ""),
+            duration=r.get("duration"),
+            description=r.get("description"),
+        )
+        for i, r in enumerate(raw_resources)
+    ]
+
+    return CourseOut(
+        id=c.id,
+        _id=str(c.id),
+        title=c.title,
+        description=c.description,
+        language=c.language,
+        level=c.level,
+        category=getattr(c, "category", "grammar") or "grammar",
+        duration=getattr(c, "duration", "8 Weeks") or "8 Weeks",
+        thumbnail_url=c.thumbnail_url,
+        price=c.price,
+        is_free=c.is_free,
+        isPublished=is_pub,
+        is_published=is_pub,
+        is_featured=getattr(c, "is_featured", False) or False,
+        tags=getattr(c, "tags", None) or [],
+        resources=resources,
+        instructor_id=c.instructor_id,
+        instructor=InstructorPublic(
+            id=c.instructor.id,
+            full_name=c.instructor.full_name,
+            avatar_url=c.instructor.avatar_url,
+        ),
+        status=c.status,
+        modules_count=modules_count,
+        lessons_count=lessons_count,
+        enrolledCount=enrolled_count,
+        enrolled_count=enrolled_count,
+        created_at=c.created_at,
+        updated_at=c.updated_at,
+    )
+
 
 # ============================================================================
 # 1. HIERARCHY & DISCOVERY ENDPOINTS (Public / Student)
@@ -41,8 +103,8 @@ router = APIRouter()
 )
 def get_available_languages(db: Session = Depends(get_db)):
     """
-    Returns languages that have at least one published course,
-    with the count of available courses. Powers top-level language switcher.
+    Returns languages that have published courses, enriched with standard
+    vernacular tracks so catalog directories always display active tracks.
     """
     results = (
         db.query(Course.language, func.count(Course.id).label("count"))
@@ -51,9 +113,22 @@ def get_available_languages(db: Session = Depends(get_db)):
         .order_by(func.count(Course.id).desc())
         .all()
     )
+
+    db_counts = {lang.title(): count for lang, count in results}
+
+    # Ensure all primary vernacular tracks are represented
+    summary_map = {}
+    for lang in STANDARD_VERNACULAR_LANGUAGES:
+        summary_map[lang] = db_counts.get(lang, 0)
+
+    # Add any extra custom languages from database
+    for lang, count in db_counts.items():
+        if lang not in summary_map:
+            summary_map[lang] = count
+
     return [
         LanguageSummary(language=lang, course_count=count)
-        for lang, count in results
+        for lang, count in summary_map.items()
     ]
 
 
@@ -104,24 +179,23 @@ def get_instructors_by_language(
 @router.get(
     "",
     response_model=List[CourseOut],
-    summary="Third-level: Browse course catalog with multi-dimensional filtering",
+    summary="Browse course catalog with multi-dimensional filtering",
 )
 def list_published_courses(
-    language: Optional[str] = Query(None, description="Filter by language (e.g. German)"),
-    instructor_id: Optional[UUID] = Query(None, description="Filter by specific teacher"),
-    level: Optional[str] = Query(None, description="Filter by level (e.g. A1 - Beginner)"),
+    language: Optional[str] = Query(None, description="Filter by language (e.g. Hindi, Tamil)"),
+    instructor_id: Optional[UUID] = Query(None, description="Filter by teacher"),
+    level: Optional[str] = Query(None, description="Filter by level (foundation, intermediate, etc.)"),
+    category: Optional[str] = Query(None, description="Filter by category (grammar, conversation, etc.)"),
+    featured: Optional[bool] = Query(None, description="Filter featured courses"),
     skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
     """
     Browse published course cards.
-    Supports filtering by language, instructor, and difficulty level.
+    Supports filtering by language, instructor, level, category, and featured status.
     """
-    query = (
-        db.query(Course)
-        .filter(Course.status == "published")
-    )
+    query = db.query(Course).filter(Course.status == "published")
 
     if language:
         query = query.filter(Course.language.ilike(language))
@@ -129,38 +203,13 @@ def list_published_courses(
         query = query.filter(Course.instructor_id == instructor_id)
     if level:
         query = query.filter(Course.level.ilike(level))
+    if category:
+        query = query.filter(Course.category.ilike(category))
+    if featured is not None:
+        query = query.filter(Course.is_featured == featured)
 
     courses = query.order_by(Course.created_at.desc()).offset(skip).limit(limit).all()
-
-    # Build response cards with module and lesson counts
-    response = []
-    for c in courses:
-        modules_count = len(c.modules)
-        lessons_count = sum(len(m.lessons) for m in c.modules)
-        response.append(
-            CourseOut(
-                id=c.id,
-                title=c.title,
-                description=c.description,
-                language=c.language,
-                level=c.level,
-                thumbnail_url=c.thumbnail_url,
-                price=c.price,
-                is_free=c.is_free,
-                instructor_id=c.instructor_id,
-                instructor=InstructorPublic(
-                    id=c.instructor.id,
-                    full_name=c.instructor.full_name,
-                    avatar_url=c.instructor.avatar_url,
-                ),
-                status=c.status,
-                modules_count=modules_count,
-                lessons_count=lessons_count,
-                created_at=c.created_at,
-                updated_at=c.updated_at,
-            )
-        )
-    return response
+    return [_build_course_out(c, db) for c in courses]
 
 
 @router.get(
@@ -251,15 +300,39 @@ def get_course_detail(
             )
         )
 
+    enrolled_count = len(course.enrollments) if course.enrollments else 0
+    is_pub = (course.status == "published")
+
+    raw_resources = getattr(course, "resources", None) or []
+    resources = [
+        CourseResource(
+            id=r.get("id", f"res-{i}"),
+            type=r.get("type", "video"),
+            title=r.get("title", "Resource"),
+            url=r.get("url", ""),
+            duration=r.get("duration"),
+            description=r.get("description"),
+        )
+        for i, r in enumerate(raw_resources)
+    ]
+
     return CourseDetailOut(
         id=course.id,
+        _id=str(course.id),
         title=course.title,
         description=course.description,
         language=course.language,
         level=course.level,
+        category=getattr(course, "category", "grammar") or "grammar",
+        duration=getattr(course, "duration", "8 Weeks") or "8 Weeks",
         thumbnail_url=course.thumbnail_url,
         price=course.price,
         is_free=course.is_free,
+        isPublished=is_pub,
+        is_published=is_pub,
+        is_featured=getattr(course, "is_featured", False) or False,
+        tags=getattr(course, "tags", None) or [],
+        resources=resources,
         instructor_id=course.instructor_id,
         instructor=InstructorPublic(
             id=course.instructor.id,
@@ -269,6 +342,8 @@ def get_course_detail(
         status=course.status,
         modules_count=len(modules_out),
         lessons_count=total_lessons,
+        enrolledCount=enrolled_count,
+        enrolled_count=enrolled_count,
         modules=modules_out,
         created_at=course.created_at,
         updated_at=course.updated_at,
@@ -276,7 +351,101 @@ def get_course_detail(
 
 
 # ============================================================================
-# 2. INSTRUCTOR STUDIO ENDPOINTS (Course Management)
+# 2. COURSE RESOURCES ENDPOINTS
+# ============================================================================
+
+@router.get(
+    "/{course_id}/resources",
+    response_model=List[CourseResource],
+    summary="Get resources and study materials for a course",
+)
+def get_course_resources(
+    course_id: UUID,
+    db: Session = Depends(get_db),
+):
+    course = db.get(Course, course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    raw_resources = getattr(course, "resources", None) or []
+    return [
+        CourseResource(
+            id=r.get("id", f"res-{i}"),
+            type=r.get("type", "video"),
+            title=r.get("title", "Resource"),
+            url=r.get("url", ""),
+            duration=r.get("duration"),
+            description=r.get("description"),
+        )
+        for i, r in enumerate(raw_resources)
+    ]
+
+
+@router.post(
+    "/{course_id}/resources",
+    response_model=CourseResource,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add a study material or AI lab redirect to a course",
+)
+def add_course_resource(
+    course_id: UUID,
+    payload: CourseResourceCreate,
+    current_user: User = Depends(require_role(["instructor", "admin"])),
+    db: Session = Depends(get_db),
+):
+    course = db.get(Course, course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    if course.instructor_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to modify this course")
+
+    new_id = f"res-{int(datetime.now().timestamp() * 1000)}"
+    new_res = {
+        "id": new_id,
+        "type": payload.type,
+        "title": payload.title,
+        "url": payload.url,
+        "duration": payload.duration,
+        "description": payload.description,
+    }
+
+    current_res = list(getattr(course, "resources", None) or [])
+    current_res.append(new_res)
+    course.resources = current_res
+    db.commit()
+    db.refresh(course)
+
+    return CourseResource(**new_res)
+
+
+@router.delete(
+    "/{course_id}/resources/{resource_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a resource item from a course",
+)
+def delete_course_resource(
+    course_id: UUID,
+    resource_id: str,
+    current_user: User = Depends(require_role(["instructor", "admin"])),
+    db: Session = Depends(get_db),
+):
+    course = db.get(Course, course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    if course.instructor_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to modify this course")
+
+    current_res = list(getattr(course, "resources", None) or [])
+    filtered_res = [r for r in current_res if r.get("id") != resource_id]
+    course.resources = filtered_res
+    db.commit()
+    return None
+
+
+# ============================================================================
+# 3. INSTRUCTOR STUDIO ENDPOINTS (Course Management)
 # ============================================================================
 
 @router.post(
@@ -291,24 +460,33 @@ def create_course(
     db: Session = Depends(get_db),
 ):
     """
-    Creates a new course in 'draft' mode.
-    Automatically creates the companion private Course Group in the 'groups' table
-    and assigns the instructor as its administrator.
+    Creates a new course in published or draft mode as requested.
+    Automatically provisions companion private Course Group and educator cohort.
     """
+    course_status = "published" if payload.isPublished else "draft"
+
+    # Serialize resources list
+    raw_resources = [r.model_dump() for r in payload.resources] if payload.resources else []
+
     course = Course(
         instructor_id=current_user.id,
         title=payload.title,
         description=payload.description,
         language=payload.language,
         level=payload.level,
+        category=payload.category,
+        duration=payload.duration,
         thumbnail_url=payload.thumbnail_url,
         price=payload.price,
-        status="draft",
+        status=course_status,
+        is_featured=payload.is_featured or False,
+        tags=payload.tags or [],
+        resources=raw_resources,
     )
     db.add(course)
-    db.flush()  # Flush to get course.id for companion group creation
+    db.flush()
 
-    # Auto-create the companion course group (PRD Section 8.2)
+    # Auto-create the companion course discussion group
     course_group = Group(
         name=f"{course.title} — Cohort",
         description=f"Official private discussion group for students enrolled in {course.title}.",
@@ -320,7 +498,7 @@ def create_course(
     db.add(course_group)
     db.flush()
 
-    # Add instructor as admin of this course group
+    # Add instructor as administrator of this group
     group_member = GroupMember(
         group_id=course_group.id,
         user_id=current_user.id,
@@ -328,31 +506,22 @@ def create_course(
     )
     db.add(group_member)
 
+    # If requested modules count > 0, provision initial module structure
+    modules_to_create = payload.modules or 0
+    if modules_to_create > 0:
+        for idx in range(1, min(modules_to_create + 1, 15)):
+            mod = Module(
+                course_id=course.id,
+                title=f"Module {idx}: Core Foundations & Practice",
+                description="Structured lessons, pronunciation exercises, and study notes.",
+                order_index=idx,
+            )
+            db.add(mod)
+
     db.commit()
     db.refresh(course)
 
-    return CourseDetailOut(
-        id=course.id,
-        title=course.title,
-        description=course.description,
-        language=course.language,
-        level=course.level,
-        thumbnail_url=course.thumbnail_url,
-        price=course.price,
-        is_free=course.is_free,
-        instructor_id=course.instructor_id,
-        instructor=InstructorPublic(
-            id=current_user.id,
-            full_name=current_user.full_name,
-            avatar_url=current_user.avatar_url,
-        ),
-        status=course.status,
-        modules_count=0,
-        lessons_count=0,
-        modules=[],
-        created_at=course.created_at,
-        updated_at=course.updated_at,
-    )
+    return get_course_detail(course_id=course.id, current_user=current_user, db=db)
 
 
 @router.get(
@@ -371,35 +540,7 @@ def get_my_courses(
         .order_by(Course.created_at.desc())
         .all()
     )
-
-    response = []
-    for c in courses:
-        modules_count = len(c.modules)
-        lessons_count = sum(len(m.lessons) for m in c.modules)
-        response.append(
-            CourseOut(
-                id=c.id,
-                title=c.title,
-                description=c.description,
-                language=c.language,
-                level=c.level,
-                thumbnail_url=c.thumbnail_url,
-                price=c.price,
-                is_free=c.is_free,
-                instructor_id=c.instructor_id,
-                instructor=InstructorPublic(
-                    id=c.instructor.id,
-                    full_name=c.instructor.full_name,
-                    avatar_url=c.instructor.avatar_url,
-                ),
-                status=c.status,
-                modules_count=modules_count,
-                lessons_count=lessons_count,
-                created_at=c.created_at,
-                updated_at=c.updated_at,
-            )
-        )
-    return response
+    return [_build_course_out(c, db) for c in courses]
 
 
 @router.put(
@@ -421,8 +562,25 @@ def update_course(
         raise HTTPException(status_code=403, detail="Not authorized to edit this course")
 
     update_data = payload.model_dump(exclude_unset=True)
+
+    # Handle isPublished / is_published boolean updates
+    if "isPublished" in update_data and update_data["isPublished"] is not None:
+        course.status = "published" if update_data["isPublished"] else "draft"
+        del update_data["isPublished"]
+    if "is_published" in update_data and update_data["is_published"] is not None:
+        course.status = "published" if update_data["is_published"] else "draft"
+        del update_data["is_published"]
+
+    # Handle resources list serialization
+    if "resources" in update_data and update_data["resources"] is not None:
+        update_data["resources"] = [
+            r if isinstance(r, dict) else r.model_dump()
+            for r in update_data["resources"]
+        ]
+
     for field, value in update_data.items():
-        setattr(course, field, value)
+        if hasattr(course, field):
+            setattr(course, field, value)
 
     db.commit()
     db.refresh(course)
@@ -451,27 +609,7 @@ def set_course_status(
     db.commit()
     db.refresh(course)
 
-    return CourseOut(
-        id=course.id,
-        title=course.title,
-        description=course.description,
-        language=course.language,
-        level=course.level,
-        thumbnail_url=course.thumbnail_url,
-        price=course.price,
-        is_free=course.is_free,
-        instructor_id=course.instructor_id,
-        instructor=InstructorPublic(
-            id=course.instructor.id,
-            full_name=course.instructor.full_name,
-            avatar_url=course.instructor.avatar_url,
-        ),
-        status=course.status,
-        modules_count=len(course.modules),
-        lessons_count=sum(len(m.lessons) for m in course.modules),
-        created_at=course.created_at,
-        updated_at=course.updated_at,
-    )
+    return _build_course_out(course, db)
 
 
 @router.delete(
@@ -497,7 +635,7 @@ def delete_course(
 
 
 # ============================================================================
-# 3. CURRICULUM BUILDER: MODULES
+# 4. CURRICULUM BUILDER: MODULES
 # ============================================================================
 
 @router.post(
@@ -519,7 +657,6 @@ def create_module(
     if course.instructor_id != current_user.id and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized to modify this course")
 
-    # If order_index not explicitly provided, append to end
     existing_count = db.query(Module).filter(Module.course_id == course_id).count()
     order_index = payload.order_index if payload.order_index > 1 else (existing_count + 1)
 
@@ -585,14 +722,14 @@ def delete_module(
 
 
 # ============================================================================
-# 4. CURRICULUM BUILDER: LESSONS
+# 5. CURRICULUM BUILDER: LESSONS
 # ============================================================================
 
 @router.post(
     "/modules/{module_id}/lessons",
     response_model=LessonOut,
     status_code=status.HTTP_201_CREATED,
-    summary="Add a lesson (YouTube ID, Drive notes) to a module",
+    summary="Add a lesson to a module",
 )
 def create_lesson(
     module_id: UUID,
@@ -632,7 +769,7 @@ def create_lesson(
         notes_url=lesson.notes_url,
         order_index=lesson.order_index,
         is_preview=lesson.is_preview,
-        is_unlocked=True,  # Creator always has unlocked view
+        is_unlocked=True,
         created_at=lesson.created_at,
         updated_at=lesson.updated_at,
     )

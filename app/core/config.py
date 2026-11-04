@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     ENABLE_DEV_LOGIN: bool = False
 
-    # CORS
+    # CORS Allowed Origins
     CORS_ORIGINS: Union[List[str], str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
@@ -20,6 +20,7 @@ class Settings(BaseSettings):
         "http://127.0.0.1:8000",
         "https://learn.vartalang.in",
         "https://vartalang.in",
+        "https://www.vartalang.in",
     ]
 
     @field_validator("CORS_ORIGINS", mode="before")
@@ -37,7 +38,7 @@ class Settings(BaseSettings):
     @field_validator("DATABASE_URL", mode="after")
     @classmethod
     def fix_postgres_url(cls, v: str) -> str:
-        # Neon and Render sometimes supply postgres:// instead of postgresql://
+        # Normalize cloud provider postgres:// prefixes
         if v.startswith("postgres://"):
             return v.replace("postgres://", "postgresql+psycopg2://", 1)
         elif v.startswith("postgresql://") and not v.startswith("postgresql+"):
@@ -50,11 +51,10 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
     # SSO Handshake with Main VartaLang
-    # app/core/config.py
     VARTALANG_MAIN_AUTH_URL: str = "https://vl-backend-9zi0.onrender.com/sso/verify"
     SSO_SHARED_SECRET: str = "default_sso_secret"
 
-    # Razorpay
+    # Razorpay Payments
     RAZORPAY_KEY_ID: str = ""
     RAZORPAY_KEY_SECRET: str = ""
 
@@ -62,7 +62,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
-        extra="ignore"
+        extra="ignore",
     )
 
 

@@ -6,6 +6,8 @@ from app.schemas.course import (
     InstructorPublic,
     LanguageSummary,
     InstructorLanguageSummary,
+    CourseResource,
+    CourseResourceCreate,
     LessonCreate,
     LessonUpdate,
     LessonOut,
@@ -23,6 +25,30 @@ from app.schemas.enrollment import (
     LessonProgressToggleResponse,
     CourseProgressDetail,
 )
+from app.schemas.instructor import InstructorProfileIn, InstructorProfileOut
+from app.schemas.streak import UserStreakOut, UserStreakHeartbeatIn
+from app.schemas.article import ArticleOut, ArticleCreate
+from app.schemas.career import JobPostingOut, JobPostingCreate, JobApplyRequest
+from app.schemas.practice import (
+    PracticeLabOut,
+    ProgressStats,
+    PracticeProgressResponse,
+    PracticeEvaluateRequest,
+    PracticeEvaluateResponse,
+)
+from app.schemas.challenge import ChallengeOut, LeaderboardEntryOut
+from app.schemas.certification import (
+    CertificationOut,
+    CertificationVerifyRequest,
+    CertificationVerifyResponse,
+)
+from app.schemas.admin import (
+    AdminStatsOut,
+    AdminUserOut,
+    AdminUsersListOut,
+    UserRoleUpdate,
+    UserStatusUpdate,
+)
 
 __all__ = [
     "UserBase",
@@ -34,6 +60,8 @@ __all__ = [
     "InstructorPublic",
     "LanguageSummary",
     "InstructorLanguageSummary",
+    "CourseResource",
+    "CourseResourceCreate",
     "LessonCreate",
     "LessonUpdate",
     "LessonOut",
@@ -48,4 +76,28 @@ __all__ = [
     "EnrollmentOut",
     "LessonProgressToggleResponse",
     "CourseProgressDetail",
+    "InstructorProfileIn",
+    "InstructorProfileOut",
+    "UserStreakOut",
+    "UserStreakHeartbeatIn",
+    "ArticleOut",
+    "ArticleCreate",
+    "JobPostingOut",
+    "JobPostingCreate",
+    "JobApplyRequest",
+    "PracticeLabOut",
+    "ProgressStats",
+    "PracticeProgressResponse",
+    "PracticeEvaluateRequest",
+    "PracticeEvaluateResponse",
+    "ChallengeOut",
+    "LeaderboardEntryOut",
+    "CertificationOut",
+    "CertificationVerifyRequest",
+    "CertificationVerifyResponse",
+    "AdminStatsOut",
+    "AdminUserOut",
+    "AdminUsersListOut",
+    "UserRoleUpdate",
+    "UserStatusUpdate",
 ]

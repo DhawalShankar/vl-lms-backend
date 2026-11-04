@@ -1,7 +1,7 @@
 from decimal import Decimal
-from typing import List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 import uuid6
-from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, ForeignKey, Integer, JSON, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import TimeStampedModel
@@ -27,7 +27,11 @@ class Course(TimeStampedModel):
     language: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     level: Mapped[str] = mapped_column(
         String(30), nullable=False, default="Beginner"
-    )  # e.g., 'A1 - Beginner', 'B1 - Intermediate'
+    )  # e.g., 'foundation', 'intermediate', 'professional', 'mastery'
+    category: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="grammar"
+    )  # e.g., 'grammar', 'vocabulary', 'pronunciation', 'conversation', 'exam-prep', 'cultural'
+    duration: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, default="8 Weeks")
     thumbnail_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     price: Mapped[Decimal] = mapped_column(
         Numeric(10, 2), nullable=False, default=Decimal("0.00")
@@ -35,6 +39,9 @@ class Course(TimeStampedModel):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="draft"
     )  # 'draft' | 'published' | 'archived'
+    is_featured: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    tags: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)
+    resources: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)
 
     # Relationships
     instructor: Mapped["User"] = relationship("User", back_populates="courses_taught")
@@ -57,6 +64,14 @@ class Course(TimeStampedModel):
     @property
     def is_free(self) -> bool:
         return self.price == Decimal("0.00")
+
+    @property
+    def is_published(self) -> bool:
+        return self.status == "published"
+
+    @property
+    def enrolled_count(self) -> int:
+        return len(self.enrollments) if self.enrollments else 0
 
     def __repr__(self) -> str:
         return f"<Course {self.title} ({self.status})>"
@@ -100,11 +115,11 @@ class Lesson(TimeStampedModel):
     title: Mapped[str] = mapped_column(String(150), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     youtube_video_id: Mapped[Optional[str]] = mapped_column(
-        String(50), nullable=True
-    )  # YouTube Unlisted Video ID (e.g., "dQw4w9WgXcQ")
+        String(100), nullable=True
+    )  # YouTube / Video ID or URL
     notes_url: Mapped[Optional[str]] = mapped_column(
         String(500), nullable=True
-    )  # Google Drive Notes link
+    )  # Google Drive / Study Notes URL
     order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     is_preview: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
