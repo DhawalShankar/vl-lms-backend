@@ -66,8 +66,10 @@ class LessonProgress(TimeStampedModel):
         index=True,
     )
     is_completed: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    completed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+    # Nullable: a lesson that was un-completed has no completion time.
+    # server_default stamps the time on INSERT (first completion).
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=True
     )
 
     # Relationships
