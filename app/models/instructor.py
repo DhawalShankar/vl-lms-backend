@@ -1,3 +1,4 @@
+# app/models/instructor.py
 from typing import List, Optional, TYPE_CHECKING
 import uuid6
 from sqlalchemy import ForeignKey, Integer, JSON, String, Text
@@ -30,7 +31,8 @@ class InstructorProfile(TimeStampedModel):
     )
     languages: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     experience_years: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
-    avatar_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    # Text, not String(500): avatar URLs (e.g. Google photos) can exceed 500 characters
+    avatar_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     twitter: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     linkedin: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     youtube: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -43,4 +45,3 @@ class InstructorProfile(TimeStampedModel):
 
     def __repr__(self) -> str:
         return f"<InstructorProfile {self.name} ({self.title})>"
-

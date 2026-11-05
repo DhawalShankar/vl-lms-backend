@@ -1,3 +1,4 @@
+# app/api/v1/endpoints/instructor.py
 from typing import Optional
 from uuid import UUID
 
@@ -6,9 +7,14 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_optional_current_user, require_role
 from app.core.database import get_db
+from app.models.course import Course
 from app.models.instructor import InstructorProfile
 from app.models.user import User
-from app.schemas.instructor import InstructorProfileIn, InstructorProfileOut
+from app.schemas.instructor import (
+    InstructorProfileIn,
+    InstructorProfileOut,
+    InstructorPublicOut,
+)
 
 router = APIRouter()
 
@@ -19,8 +25,8 @@ DEFAULT_BIO = (
 )
 
 
-def _profile_out(profile: InstructorProfile, include_private: bool) -> InstructorProfileOut:
-    """Payout details (UPI / bank) are only included for the profile owner."""
+def _own_out(profile: InstructorProfile) -> InstructorProfileOut:
+    """Owner/admin view. Includes payout details (bank account is masked by the schema)."""
     return InstructorProfileOut(
         name=profile.name,
         title=profile.title,
@@ -32,15 +38,42 @@ def _profile_out(profile: InstructorProfile, include_private: bool) -> Instructo
         linkedin=profile.linkedin or "",
         youtube=profile.youtube or "",
         website=profile.website or "",
-        upiId=(profile.upi_id or "") if include_private else "",
-        bankAccount=(profile.bank_account or "") if include_private else "",
+        upiId=profile.upi_id or "",
+        bankAccount=profile.bank_account or "",
+    )
+
+
+def _public_out(profile: InstructorProfile) -> InstructorPublicOut:
+    """Public view. No payout details, ever."""
+    return InstructorPublicOut(
+        userId=profile.user_id,
+        name=profile.name,
+        title=profile.title,
+        bio=profile.bio,
+        languages=profile.languages or ["Hindi", "English"],
+        experienceYears=profile.experience_years,
+        avatarUrl=profile.avatar_url or "",
+        twitter=profile.twitter or "",
+        linkedin=profile.linkedin or "",
+        youtube=profile.youtube or "",
+        website=profile.website or "",
+    )
+
+
+def _has_published_course(db: Session, user_id: UUID) -> bool:
+    # NOTE: confirm Course.instructor_id / Course.status names against app/models/course.py
+    return (
+        db.query(Course.id)
+        .filter(Course.instructor_id == user_id, Course.status == "published")
+        .first()
+        is not None
     )
 
 
 @router.get(
     "/profile",
-    response_model=InstructorProfileOut,
-    summary="Get instructor profile",
+    response_model=None,
+    summary="Get instructor profile (own = full, public = only if they have a published course)",
 )
 def get_instructor_profile(
     user_id: Optional[str] = Query(None, description="Optional instructor user id"),
@@ -56,27 +89,39 @@ def get_instructor_profile(
     elif current_user:
         target_id = current_user.id
 
-    is_owner = bool(current_user and target_id and current_user.id == target_id)
+    if not target_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Instructor not found")
 
-    if target_id:
-        profile = (
-            db.query(InstructorProfile)
-            .filter(InstructorProfile.user_id == target_id)
-            .first()
-        )
-        if profile:
-            return _profile_out(profile, include_private=is_owner)
+    is_owner = bool(current_user and current_user.id == target_id)
+    is_admin = bool(current_user and current_user.role == "admin")
 
-    # No saved profile yet: neutral defaults only (no fake social links or payout details)
-    default_name = current_user.full_name if (current_user and is_owner) else "Language Educator"
-    default_avatar = (current_user.avatar_url if (current_user and is_owner) else "") or ""
+    profile = (
+        db.query(InstructorProfile)
+        .filter(InstructorProfile.user_id == target_id)
+        .first()
+    )
+
+    # Someone else's profile: public view, and only if they have at least one published course.
+    # Admins can always view (they see the full profile).
+    if not is_owner and not is_admin:
+        if not profile or not _has_published_course(db, target_id):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Instructor not found")
+        return _public_out(profile)
+
+    if profile:
+        return _own_out(profile)
+
+    if is_admin and not is_owner:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Instructor not found")
+
+    # Owner with no saved profile yet: neutral defaults only
     return InstructorProfileOut(
-        name=default_name,
+        name=current_user.full_name,
         title=DEFAULT_TITLE,
         bio=DEFAULT_BIO,
         languages=["Hindi", "English"],
         experienceYears=5,
-        avatarUrl=default_avatar,
+        avatarUrl=current_user.avatar_url or "",
         twitter="",
         linkedin="",
         youtube="",
@@ -89,7 +134,7 @@ def get_instructor_profile(
 @router.post(
     "/profile",
     response_model=InstructorProfileOut,
-    summary="Save / update public instructor profile",
+    summary="Save / update instructor profile",
 )
 def save_instructor_profile(
     payload: InstructorProfileIn,
@@ -102,6 +147,8 @@ def save_instructor_profile(
         .first()
     )
 
+    avatar = (payload.avatarUrl or "").strip() or None  # empty = clear the photo
+
     if not profile:
         profile = InstructorProfile(
             user_id=current_user.id,
@@ -110,7 +157,7 @@ def save_instructor_profile(
             bio=payload.bio,
             languages=payload.languages,
             experience_years=payload.experienceYears,
-            avatar_url=payload.avatarUrl or current_user.avatar_url,
+            avatar_url=avatar or current_user.avatar_url,
             twitter=payload.twitter,
             linkedin=payload.linkedin,
             youtube=payload.youtube,
@@ -125,21 +172,23 @@ def save_instructor_profile(
         profile.bio = payload.bio
         profile.languages = payload.languages
         profile.experience_years = payload.experienceYears
-        profile.avatar_url = payload.avatarUrl or profile.avatar_url
+        profile.avatar_url = avatar
         profile.twitter = payload.twitter
         profile.linkedin = payload.linkedin
         profile.youtube = payload.youtube
         profile.website = payload.website
         profile.upi_id = payload.upiId
-        profile.bank_account = payload.bankAccount
+        # The form is pre-filled with the MASKED account number. If it comes back
+        # masked, keep the real stored value instead of overwriting it.
+        if "•" not in (payload.bankAccount or ""):
+            profile.bank_account = payload.bankAccount
 
     # Keep user's full_name and avatar synced
     current_user.full_name = payload.name
-    if payload.avatarUrl:
-        current_user.avatar_url = payload.avatarUrl
+    if avatar:
+        current_user.avatar_url = avatar
 
     db.commit()
     db.refresh(profile)
 
-    # The owner just saved this, so private payout fields are included
-    return _profile_out(profile, include_private=True)
+    return _own_out(profile)

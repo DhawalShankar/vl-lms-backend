@@ -1,5 +1,6 @@
+# app/models/user.py
 from typing import List, Optional, TYPE_CHECKING
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import TimeStampedModel
 
@@ -26,7 +27,8 @@ class User(TimeStampedModel):
     role: Mapped[str] = mapped_column(
         String(20), nullable=False, default="student"
     )  # 'student' | 'instructor' | 'admin'
-    avatar_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    # Text, not String(500): Google profile photo URLs can exceed 1,000 characters
+    avatar_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # Relationships
