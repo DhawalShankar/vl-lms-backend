@@ -1,4 +1,6 @@
 # app/api/v1/endpoints/auth.py
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
@@ -11,6 +13,15 @@ from app.schemas.user import UserOut
 from app.services.sso import verify_sso_code_with_main_platform
 
 router = APIRouter()
+
+
+def _record_login(user: User) -> None:
+    """SSO login monitoring: first/last login time and a running login count."""
+    now = datetime.now(timezone.utc)
+    if user.first_login_at is None:
+        user.first_login_at = now
+    user.last_login_at = now
+    user.login_count = (user.login_count or 0) + 1
 
 
 @router.post(
@@ -52,21 +63,35 @@ async def exchange_sso_code(
             role=identity["role"],
             avatar_url=identity.get("avatar_url"),
         )
+        _record_login(user)
         db.add(user)
         db.commit()
         db.refresh(user)
     else:
-        # Existing user -> sync profile info and role from main VartaLang
+        # Deleted by an admin: never re-create or re-activate. The main VartaLang account is untouched.
+        if user.deleted_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This account has been removed.",
+            )
         if not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Account disabled.",
             )
+
+        # Existing user -> sync role from main VartaLang (source of truth for roles)
         user.vartalang_user_id = identity["vartalang_user_id"]
-        user.full_name = identity["full_name"]
-        user.role = identity["role"]  # main VartaLang is the source of truth for roles
-        if identity.get("avatar_url"):
-            user.avatar_url = identity["avatar_url"]
+        user.role = identity["role"]
+
+        # Instructors manage their own name and photo in the LMS profile. Do not overwrite
+        # those with the main-site values on every login (course cards read users.full_name).
+        if user.instructor_profile is None:
+            user.full_name = identity["full_name"]
+            if identity.get("avatar_url"):
+                user.avatar_url = identity["avatar_url"]
+
+        _record_login(user)
         db.commit()
         db.refresh(user)
 
@@ -95,7 +120,8 @@ def dev_login(
     """
     Developer helper endpoint to quickly simulate student, instructor,
     or admin logins without requiring the main VartaLang server.
-    Disabled unless ENABLE_DEV_LOGIN=true is explicitly set.
+    Disabled unless ENABLE_DEV_LOGIN=true is explicitly set (keep it false in production).
+    Dev logins are NOT counted in the SSO login stats.
     """
     if not settings.ENABLE_DEV_LOGIN:
         raise HTTPException(
@@ -115,6 +141,11 @@ def dev_login(
         db.commit()
         db.refresh(user)
     else:
+        if user.deleted_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This account has been removed.",
+            )
         # Update role if requested differently during testing
         if payload.role and user.role != payload.role:
             user.role = payload.role

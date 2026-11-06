@@ -1,4 +1,5 @@
-from datetime import datetime
+# app/api/v1/endpoints/courses.py
+from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
 
@@ -11,6 +12,7 @@ from app.core.database import get_db
 from app.models.course import Course, Lesson, Module
 from app.models.enrollment import Enrollment
 from app.models.group import Group, GroupMember
+from app.models.payment import Payment
 from app.models.user import User
 from app.schemas.course import (
     CourseCreate,
@@ -38,6 +40,28 @@ STANDARD_VERNACULAR_LANGUAGES = [
     "Gujarati", "Kannada", "Malayalam", "Punjabi", "Odia", "Assamese", "Urdu", "Sanskrit"
 ]
 
+# While a course is live or waiting for review, instructors cannot change it.
+# They must move it back to draft first (which takes it offline until it is approved again).
+LOCKED_STATUSES = {"published", "pending_review"}
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _active_enrolled(course: Course) -> int:
+    """Enrollments that count (cancelled ones, e.g. from a deleted student, do not)."""
+    return sum(1 for e in (course.enrollments or []) if e.status != "cancelled")
+
+
+def mark_published(course: Course, admin_id: UUID) -> None:
+    """Single place that publishes a course. Only admins ever call this."""
+    course.status = "published"
+    course.published_by = admin_id
+    course.reviewed_by = admin_id
+    course.reviewed_at = _now()
+    course.rejection_reason = None
+
 
 def _parse_resources(course: Course) -> List[CourseResource]:
     """Turn the stored JSON resources into CourseResource objects."""
@@ -58,7 +82,7 @@ def _parse_resources(course: Course) -> List[CourseResource]:
 def _build_course_out(c: Course, db: Session) -> CourseOut:
     modules_count = len(c.modules)
     lessons_count = sum(len(m.lessons) for m in c.modules)
-    enrolled_count = len(c.enrollments) if c.enrollments else 0
+    enrolled_count = _active_enrolled(c)
     is_pub = (c.status == "published")
 
     return CourseOut(
@@ -85,6 +109,9 @@ def _build_course_out(c: Course, db: Session) -> CourseOut:
             avatar_url=c.instructor.avatar_url,
         ),
         status=c.status,
+        rejection_reason=c.rejection_reason,
+        submitted_at=c.submitted_at,
+        managed_by_admin=c.managed_by_admin,
         modules_count=modules_count,
         lessons_count=lessons_count,
         enrolledCount=enrolled_count,
@@ -110,12 +137,101 @@ def _lesson_out(lesson: Lesson, unlocked: bool = True) -> LessonOut:
     )
 
 
-def _get_owned_course(db: Session, course_id: UUID, current_user: User, action: str = "modify") -> Course:
+def _authorize_course(course: Course, user: User, action: str = "modify", edit: bool = True) -> None:
+    """
+    Ownership + approval rules.
+    - Only the owner or an admin can touch a course.
+    - edit=True (content/price/curriculum changes): instructors are blocked while the course is
+      live or in review, and always on admin-managed courses. Admins are never blocked.
+    """
+    if course.instructor_id != user.id and user.role != "admin":
+        raise HTTPException(status_code=403, detail=f"Not authorized to {action} this course")
+    if user.role == "admin":
+        return
+    if course.managed_by_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="This course is managed by an admin. Contact support to change it.",
+        )
+    if edit and course.status in LOCKED_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail="This course is live or in review. Move it back to draft to edit it.",
+        )
+
+
+def _get_owned_course(
+    db: Session, course_id: UUID, current_user: User, action: str = "modify", edit: bool = True
+) -> Course:
     course = db.get(Course, course_id)
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
-    if course.instructor_id != current_user.id and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail=f"Not authorized to {action} this course")
+    _authorize_course(course, current_user, action, edit)
+    return course
+
+
+def create_course_record(
+    db: Session,
+    payload: CourseCreate,
+    instructor_id: UUID,
+    status_value: str,
+    created_by: UUID,
+    managed_by_admin: bool = False,
+) -> Course:
+    """Creates the course, its companion group and starter modules. Used by instructors and by admins."""
+    raw_resources = [r.model_dump() for r in payload.resources] if payload.resources else []
+
+    course = Course(
+        instructor_id=instructor_id,
+        title=payload.title,
+        description=payload.description,
+        language=payload.language,
+        level=payload.level,
+        category=payload.category,
+        duration=payload.duration,
+        thumbnail_url=payload.thumbnail_url,
+        price=payload.price,
+        status="draft",
+        is_featured=payload.is_featured or False,
+        tags=payload.tags or [],
+        resources=raw_resources,
+        created_by=created_by,
+        managed_by_admin=managed_by_admin,
+    )
+    db.add(course)
+    db.flush()
+
+    if status_value == "published":
+        mark_published(course, created_by)
+
+    # Auto-create the companion course discussion group; the instructor administers it
+    course_group = Group(
+        name=f"{course.title} — Cohort",
+        description=f"Official private discussion group for students enrolled in {course.title}.",
+        group_type="course",
+        language=course.language,
+        course_id=course.id,
+        created_by=instructor_id,
+    )
+    db.add(course_group)
+    db.flush()
+
+    db.add(GroupMember(group_id=course_group.id, user_id=instructor_id, role="admin"))
+
+    modules_to_create = payload.modules or 0
+    if modules_to_create > 0:
+        for idx in range(1, min(modules_to_create + 1, 15)):
+            db.add(
+                Module(
+                    course_id=course.id,
+                    title=f"Module {idx}: Core Foundations & Practice",
+                    description="Structured lessons, pronunciation exercises, and study notes.",
+                    order_index=idx,
+                )
+            )
+
+    db.commit()
+    db.refresh(course)
     return course
 
 
@@ -262,7 +378,7 @@ def get_course_detail(
             detail="Course not found",
         )
 
-    # If course is draft or archived, only creator or admin can view it
+    # Draft, in-review, rejected or archived: only the creator or an admin can view it
     if course.status != "published":
         if not current_user or (
             current_user.id != course.instructor_id and current_user.role != "admin"
@@ -272,7 +388,7 @@ def get_course_detail(
                 detail="Course not found or is currently not published.",
             )
 
-    # Determine full access: creator, admin, or actively enrolled student
+    # Determine full access: creator, admin, or an enrolled student (active or completed)
     has_full_access = False
     if current_user:
         if current_user.id == course.instructor_id or current_user.role == "admin":
@@ -283,7 +399,7 @@ def get_course_detail(
                 .filter(
                     Enrollment.course_id == course.id,
                     Enrollment.user_id == current_user.id,
-                    Enrollment.status == "active",
+                    Enrollment.status.in_(["active", "completed"]),
                 )
                 .first()
             )
@@ -312,7 +428,7 @@ def get_course_detail(
             )
         )
 
-    enrolled_count = len(course.enrollments) if course.enrollments else 0
+    enrolled_count = _active_enrolled(course)
     is_pub = (course.status == "published")
 
     return CourseDetailOut(
@@ -339,6 +455,9 @@ def get_course_detail(
             avatar_url=course.instructor.avatar_url,
         ),
         status=course.status,
+        rejection_reason=course.rejection_reason,
+        submitted_at=course.submitted_at,
+        managed_by_admin=course.managed_by_admin,
         modules_count=len(modules_out),
         lessons_count=total_lessons,
         enrolledCount=enrolled_count,
@@ -436,67 +555,19 @@ def create_course(
     db: Session = Depends(get_db),
 ):
     """
-    Creates a new course in published or draft mode as requested.
+    Instructors always create drafts (the isPublished flag is ignored for them): publishing
+    needs admin approval. Admins can create a published course directly.
     Automatically provisions companion private Course Group and educator cohort.
     """
-    course_status = "published" if payload.isPublished else "draft"
+    publish_now = current_user.role == "admin" and bool(payload.isPublished)
 
-    # Serialize resources list
-    raw_resources = [r.model_dump() for r in payload.resources] if payload.resources else []
-
-    course = Course(
+    course = create_course_record(
+        db,
+        payload,
         instructor_id=current_user.id,
-        title=payload.title,
-        description=payload.description,
-        language=payload.language,
-        level=payload.level,
-        category=payload.category,
-        duration=payload.duration,
-        thumbnail_url=payload.thumbnail_url,
-        price=payload.price,
-        status=course_status,
-        is_featured=payload.is_featured or False,
-        tags=payload.tags or [],
-        resources=raw_resources,
-    )
-    db.add(course)
-    db.flush()
-
-    # Auto-create the companion course discussion group
-    course_group = Group(
-        name=f"{course.title} — Cohort",
-        description=f"Official private discussion group for students enrolled in {course.title}.",
-        group_type="course",
-        language=course.language,
-        course_id=course.id,
+        status_value="published" if publish_now else "draft",
         created_by=current_user.id,
     )
-    db.add(course_group)
-    db.flush()
-
-    # Add instructor as administrator of this group
-    group_member = GroupMember(
-        group_id=course_group.id,
-        user_id=current_user.id,
-        role="admin",
-    )
-    db.add(group_member)
-
-    # If requested modules count > 0, provision initial module structure
-    modules_to_create = payload.modules or 0
-    if modules_to_create > 0:
-        for idx in range(1, min(modules_to_create + 1, 15)):
-            mod = Module(
-                course_id=course.id,
-                title=f"Module {idx}: Core Foundations & Practice",
-                description="Structured lessons, pronunciation exercises, and study notes.",
-                order_index=idx,
-            )
-            db.add(mod)
-
-    db.commit()
-    db.refresh(course)
-
     return get_course_detail(course_id=course.id, current_user=current_user, db=db)
 
 
@@ -509,7 +580,7 @@ def get_my_courses(
     current_user: User = Depends(require_role(["instructor", "admin"])),
     db: Session = Depends(get_db),
 ):
-    """Returns all courses (draft, published, archived) created by the instructor."""
+    """Returns all courses (draft, in review, published, rejected, archived) of the instructor."""
     courses = (
         db.query(Course)
         .filter(Course.instructor_id == current_user.id)
@@ -531,21 +602,36 @@ def update_course(
     db: Session = Depends(get_db),
 ):
     course = _get_owned_course(db, course_id, current_user, action="edit")
+    is_admin = current_user.role == "admin"
 
     update_data = payload.model_dump(exclude_unset=True)
 
     # `modules` is a relationship on Course (not a count) and `status` is changed
-    # only via PATCH /{course_id}/status, so never copy them with setattr below.
+    # only via the status / submit / approval endpoints, so never copy them with setattr below.
     update_data.pop("modules", None)
     update_data.pop("status", None)
 
-    # Handle isPublished / is_published boolean updates
-    if "isPublished" in update_data and update_data["isPublished"] is not None:
-        course.status = "published" if update_data["isPublished"] else "draft"
-    update_data.pop("isPublished", None)
-    if "is_published" in update_data and update_data["is_published"] is not None:
-        course.status = "published" if update_data["is_published"] else "draft"
-    update_data.pop("is_published", None)
+    # isPublished / is_published: only admins may publish this way
+    wants_publish: Optional[bool] = None
+    for key in ("isPublished", "is_published"):
+        if key in update_data:
+            value = update_data.pop(key)
+            if value is not None:
+                wants_publish = value
+    if wants_publish is not None:
+        if is_admin:
+            if wants_publish:
+                mark_published(course, current_user.id)
+            else:
+                course.status = "draft"
+        elif wants_publish:
+            raise HTTPException(
+                status_code=403,
+                detail="Publishing needs admin approval. Use Submit for review.",
+            )
+
+    if not is_admin:
+        update_data.pop("is_featured", None)
 
     # Handle resources list serialization
     if "resources" in update_data and update_data["resources"] is not None:
@@ -563,10 +649,50 @@ def update_course(
     return get_course_detail(course_id=course.id, current_user=current_user, db=db)
 
 
+@router.post(
+    "/{course_id}/submit",
+    response_model=CourseOut,
+    summary="Submit a draft (or rejected) course for admin review",
+)
+def submit_for_review(
+    course_id: UUID,
+    current_user: User = Depends(require_role(["instructor", "admin"])),
+    db: Session = Depends(get_db),
+):
+    course = db.get(Course, course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    if course.instructor_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the course owner can submit it for review")
+    if course.managed_by_admin and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="This course is managed by an admin.")
+    if course.status not in ("draft", "rejected"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Only draft or rejected courses can be submitted (this one is {course.status}).",
+        )
+
+    lesson_count = (
+        db.query(Lesson.id)
+        .join(Module, Lesson.module_id == Module.id)
+        .filter(Module.course_id == course.id)
+        .count()
+    )
+    if lesson_count < 1:
+        raise HTTPException(status_code=400, detail="Add at least one lesson before submitting for review.")
+
+    course.status = "pending_review"
+    course.submitted_at = _now()
+    course.rejection_reason = None
+    db.commit()
+    db.refresh(course)
+    return _build_course_out(course, db)
+
+
 @router.patch(
     "/{course_id}/status",
     response_model=CourseOut,
-    summary="Change course status (draft, published, archived)",
+    summary="Change course status. Instructors can only move a course back to draft.",
 )
 def set_course_status(
     course_id: UUID,
@@ -574,9 +700,21 @@ def set_course_status(
     current_user: User = Depends(require_role(["instructor", "admin"])),
     db: Session = Depends(get_db),
 ):
-    course = _get_owned_course(db, course_id, current_user, action="change the status of")
+    course = _get_owned_course(
+        db, course_id, current_user, action="change the status of", edit=False
+    )
 
-    course.status = payload.status
+    target = payload.status
+    if current_user.role != "admin" and target != "draft":
+        raise HTTPException(
+            status_code=403,
+            detail="Only an admin can publish or archive a course. Use Submit for review to request publishing.",
+        )
+
+    if target == "published":
+        mark_published(course, current_user.id)
+    else:
+        course.status = target
     db.commit()
     db.refresh(course)
 
@@ -586,14 +724,36 @@ def set_course_status(
 @router.delete(
     "/{course_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete a course and all associated modules and lessons",
+    summary="Delete a course (archived instead if it has students or payments)",
 )
 def delete_course(
     course_id: UUID,
     current_user: User = Depends(require_role(["instructor", "admin"])),
     db: Session = Depends(get_db),
 ):
-    course = _get_owned_course(db, course_id, current_user, action="delete")
+    course = _get_owned_course(db, course_id, current_user, action="delete", edit=False)
+    is_admin = current_user.role == "admin"
+
+    if not is_admin and course.status not in ("draft", "rejected"):
+        raise HTTPException(
+            status_code=409,
+            detail="Move the course back to draft before deleting it.",
+        )
+
+    has_enrollments = (
+        db.query(Enrollment.id).filter(Enrollment.course_id == course.id).first() is not None
+    )
+    has_payments = db.query(Payment.id).filter(Payment.course_id == course.id).first() is not None
+
+    if has_enrollments or has_payments:
+        if not is_admin:
+            raise HTTPException(
+                status_code=409,
+                detail="This course has students or payments, so it cannot be deleted. Ask an admin to archive it.",
+            )
+        course.status = "archived"
+        db.commit()
+        return None
 
     db.delete(course)
     db.commit()
@@ -648,8 +808,7 @@ def update_module(
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
 
-    if module.course.instructor_id != current_user.id and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to modify this module")
+    _authorize_course(module.course, current_user, "modify")
 
     update_data = payload.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -674,8 +833,7 @@ def delete_module(
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
 
-    if module.course.instructor_id != current_user.id and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to modify this module")
+    _authorize_course(module.course, current_user, "modify")
 
     db.delete(module)
     db.commit()
@@ -702,8 +860,7 @@ def create_lesson(
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
 
-    if module.course.instructor_id != current_user.id and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to modify this module")
+    _authorize_course(module.course, current_user, "modify")
 
     existing_count = db.query(Lesson).filter(Lesson.module_id == module_id).count()
     order_index = payload.order_index if payload.order_index > 1 else (existing_count + 1)
@@ -739,8 +896,7 @@ def update_lesson(
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found")
 
-    if lesson.module.course.instructor_id != current_user.id and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to modify this lesson")
+    _authorize_course(lesson.module.course, current_user, "modify")
 
     update_data = payload.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -766,8 +922,7 @@ def delete_lesson(
     if not lesson:
         raise HTTPException(status_code=404, detail="Lesson not found")
 
-    if lesson.module.course.instructor_id != current_user.id and current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized to modify this lesson")
+    _authorize_course(lesson.module.course, current_user, "modify")
 
     db.delete(lesson)
     db.commit()

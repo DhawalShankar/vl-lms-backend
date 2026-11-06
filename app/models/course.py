@@ -1,7 +1,9 @@
+# app/models/course.py
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 import uuid6
-from sqlalchemy import Boolean, ForeignKey, Integer, JSON, Numeric, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import TimeStampedModel
@@ -36,12 +38,26 @@ class Course(TimeStampedModel):
     price: Mapped[Decimal] = mapped_column(
         Numeric(10, 2), nullable=False, default=Decimal("0.00")
     )
-    status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="draft"
-    )  # 'draft' | 'published' | 'archived'
+    # 'draft' | 'pending_review' | 'published' | 'rejected' | 'archived'
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
     is_featured: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     tags: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)
     resources: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=list)
+
+    # Approval workflow.
+    # created_by / published_by / reviewed_by are plain UUID columns (no ForeignKey on purpose):
+    # a second FK to users would make the Course.instructor <-> User.courses_taught
+    # relationships ambiguous. They are audit references only.
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by: Mapped[Optional[uuid6.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by: Mapped[Optional[uuid6.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    published_by: Mapped[Optional[uuid6.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # True = created by an admin on the instructor's behalf; the instructor can view it but not edit it
+    managed_by_admin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     # Relationships
     instructor: Mapped["User"] = relationship("User", back_populates="courses_taught")
@@ -71,7 +87,8 @@ class Course(TimeStampedModel):
 
     @property
     def enrolled_count(self) -> int:
-        return len(self.enrollments) if self.enrollments else 0
+        # cancelled enrollments (e.g. a deleted student) do not count
+        return sum(1 for e in self.enrollments if e.status != "cancelled") if self.enrollments else 0
 
     def __repr__(self) -> str:
         return f"<Course {self.title} ({self.status})>"

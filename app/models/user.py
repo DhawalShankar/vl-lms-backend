@@ -1,6 +1,7 @@
 # app/models/user.py
+from datetime import datetime
 from typing import List, Optional, TYPE_CHECKING
-from sqlalchemy import Boolean, String, Text
+from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import TimeStampedModel
 
@@ -30,6 +31,19 @@ class User(TimeStampedModel):
     # Text, not String(500): Google profile photo URLs can exceed 1,000 characters
     avatar_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # SSO login monitoring
+    first_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    login_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+
+    # Soft delete: the row stays (payments / payouts reference it) but the account is dead.
+    # /sso/exchange rejects any user with deleted_at set, so they are never re-created.
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     courses_taught: Mapped[List["Course"]] = relationship(
