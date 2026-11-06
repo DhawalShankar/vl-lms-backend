@@ -1,3 +1,4 @@
+# app/schemas/__init__.py
 """Pydantic Request and Response Schemas."""
 
 from app.schemas.user import UserBase, UserCreate, UserOut
@@ -42,13 +43,9 @@ from app.schemas.certification import (
     CertificationVerifyRequest,
     CertificationVerifyResponse,
 )
-from app.schemas.admin import (
-    AdminStatsOut,
-    AdminUserOut,
-    AdminUsersListOut,
-    UserRoleUpdate,
-    UserStatusUpdate,
-)
+
+# Admin schemas are imported directly from app.schemas.admin where needed
+# (they are intentionally not re-exported here).
 
 __all__ = [
     "UserBase",
@@ -95,9 +92,4 @@ __all__ = [
     "CertificationOut",
     "CertificationVerifyRequest",
     "CertificationVerifyResponse",
-    "AdminStatsOut",
-    "AdminUserOut",
-    "AdminUsersListOut",
-    "UserRoleUpdate",
-    "UserStatusUpdate",
 ]
