@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.models.course import Course, Lesson, Module
 from app.models.enrollment import Enrollment, LessonProgress
 from app.models.group import Group, GroupMember
+from app.models.payment import Payment
 from app.models.user import User
 from app.schemas.enrollment import (
     CourseProgressDetail,
@@ -105,11 +106,20 @@ def enroll_in_course(
 
     # Check payment requirements
     if course.price > Decimal("0.00") and not demo_bypass:
-        # Paid course requires payment checkout
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=f"Course requires payment of INR {course.price}. Please complete payment checkout.",
+        paid_payment = (
+            db.query(Payment.id)
+            .filter(
+                Payment.user_id == current_user.id,
+                Payment.course_id == course.id,
+                Payment.status == "paid",
+            )
+            .first()
         )
+        if paid_payment is None:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=f"Course requires payment of INR {course.price}. Please complete payment checkout.",
+            )
 
     # Create enrollment
     enrollment = Enrollment(

@@ -119,6 +119,69 @@ Copy-Item .env.example .env
 `postgres://` and plain `postgresql://` values to the SQLAlchemy
 `postgresql+psycopg2://` form.
 
+Razorpay Standard Checkout uses these server-only settings:
+
+```env
+RAZORPAY_KEY_ID=your_razorpay_key_id
+RAZORPAY_KEY_SECRET=your_razorpay_key_secret
+```
+
+Authenticated clients create an order with
+`POST /api/v1/payments/create-order` and body `{"course_id": "<course UUID>"}`.
+The response contains the public `key_id`, order ID, amount in paise, and
+currency. The frontend loads
+`https://checkout.razorpay.com/v1/checkout.js`, opens the modal with those
+values, then sends `razorpay_order_id`, `razorpay_payment_id`, and
+`razorpay_signature` to `POST /api/v1/payments/verify-payment`.
+Only the backend uses `RAZORPAY_KEY_SECRET`; it must never be exposed to the
+frontend. After successful verification, call the existing course enrollment
+endpoint to unlock the course.
+
+The frontend checkout flow can use this pattern after loading the Razorpay
+script:
+
+```js
+async function payForCourse(courseId, accessToken) {
+  const orderResponse = await fetch("/api/v1/payments/create-order", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ course_id: courseId }),
+  });
+  if (!orderResponse.ok) throw new Error("Unable to create payment order");
+
+  const order = await orderResponse.json();
+  const checkout = new Razorpay({
+    key: order.key_id,
+    amount: order.amount,
+    currency: order.currency,
+    order_id: order.order_id,
+    handler: async (response) => {
+      const verification = await fetch("/api/v1/payments/verify-payment", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(response),
+      });
+      if (!verification.ok) throw new Error("Payment verification failed");
+      await fetch(`/api/v1/enrollments/${courseId}/enroll`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${accessToken}` },
+      });
+    },
+    modal: { ondismiss: () => console.info("Payment cancelled") },
+  });
+  checkout.on("payment.failed", (event) => {
+    console.error("Payment failed", event.error);
+  });
+  checkout.open();
+}
+```
+
 ### 4. Apply database migrations
 
 ```bash

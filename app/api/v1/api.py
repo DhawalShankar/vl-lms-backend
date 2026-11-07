@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     courses,
     enrollments,
     instructor,
+    payments,
     practice,
     users,
 )
@@ -30,6 +31,9 @@ api_router.include_router(courses.router, prefix="/courses", tags=["Courses"])
 
 # Student Enrollments & Lesson Progress Engine
 api_router.include_router(enrollments.router, prefix="/enrollments", tags=["Enrollments & Progress"])
+
+# Razorpay Standard Checkout
+api_router.include_router(payments.router, prefix="/payments", tags=["Payments"])
 
 # Practice Labs & Speech Evaluation
 api_router.include_router(practice.router, prefix="/practice", tags=["Practice Labs"])
