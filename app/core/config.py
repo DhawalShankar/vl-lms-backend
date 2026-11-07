@@ -1,5 +1,5 @@
 from typing import List, Union
-from pydantic import AnyHttpUrl, field_validator
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,17 +11,7 @@ class Settings(BaseSettings):
     ENABLE_DEV_LOGIN: bool = False
 
     # CORS Allowed Origins
-    CORS_ORIGINS: Union[List[str], str] = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3001",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-        "https://learn.vartalang.in",
-        "https://vartalang.in",
-        "https://www.vartalang.in",
-    ]
+    CORS_ORIGINS: Union[List[str], str] = []
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
@@ -33,7 +23,7 @@ class Settings(BaseSettings):
         return []
 
     # Database
-    DATABASE_URL: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/vartalang_lms"
+    DATABASE_URL: str
 
     @field_validator("DATABASE_URL", mode="after")
     @classmethod
@@ -46,13 +36,13 @@ class Settings(BaseSettings):
         return v
 
     # Security
-    JWT_SECRET: str = "default_development_secret_key_change_in_production_32chars"
+    JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
     # SSO Handshake with Main VartaLang
-    VARTALANG_MAIN_AUTH_URL: str = "https://vl-backend-9zi0.onrender.com/sso/verify"
-    SSO_SHARED_SECRET: str = "default_sso_secret"
+    VARTALANG_MAIN_AUTH_URL: str
+    SSO_SHARED_SECRET: str
 
     # Razorpay Payments
     RAZORPAY_KEY_ID: str = ""
